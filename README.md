@@ -1,4 +1,4 @@
-# coding-agent-configs
+# llm configs
 
 Repo to house my personal workflow files for a variety of AI coding agents
 
