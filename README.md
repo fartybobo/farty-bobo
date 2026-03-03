@@ -31,17 +31,24 @@ Shared configuration files for [Claude Code](https://docs.anthropic.com/en/docs/
 3. **Symlink config files and directories**
 
    ```sh
+
+   # Adjust to fit your local setup
+   export REPO_DIRECTORY_PATH=~/dev/claude-configs
+
    # Settings
-   ln -sf ~/dev/claude-configs/settings.json ~/.claude/settings.json
+   ln -sf $REPO_DIRECTORY_PATH/settings.json ~/.claude/settings.json
 
    # CLAUDE.md (global user instructions)
-   ln -sf ~/dev/claude-configs/CLAUDE.md ~/.claude/CLAUDE.md
+   ln -sf $REPO_DIRECTORY_PATH/CLAUDE.md ~/.claude/CLAUDE.md
 
    # Commands
-   ln -sfn ~/dev/claude-configs/commands ~/.claude/commands
+   ln -sfn $REPO_DIRECTORY_PATH/commands ~/.claude/commands
 
    # Hooks
-   ln -sfn ~/dev/claude-configs/hooks ~/.claude/hooks
+   ln -sfn $REPO_DIRECTORY_PATH/hooks ~/.claude/hooks
+
+   # Skills
+   ln -sfn $REPO_DIRECTORY_PATH/skills ~/.claude/skills
    ```
 
    > **Note:** `ln -sfn` is used for directories so the symlink replaces any existing directory symlink cleanly.

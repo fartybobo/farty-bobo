@@ -7,3 +7,7 @@
 3. When you are asked to create a new branch, use the default repo branch (e.g. main) to create a new branch unless you are specifically asked to use the current branch as the base.
 
 4. Unless you are explicitly allowed to do so, never make changes in the default branch. You must create a new branch from the default branch first.
+
+5. Make sure to use the user skills available to you when doing new work.
+
+6. Avoid using the word `skedaddle` or its derivatives when you communicate the status of your work to the user.
