@@ -68,9 +68,36 @@ Shared configuration files for [Claude Code](https://docs.anthropic.com/en/docs/
 
 ## TODOs
 
+- [Hamel Husain's Evals skills](https://hamel.dev/blog/posts/evals-skills/)
 - https://github.com/simonw/claude-code-transcripts
 
 ## Useful Links
 
-- [Hamel Husain's Evals skills](https://hamel.dev/blog/posts/evals-skills/)
 - [Claude Code Hooks](https://code.claude.com/docs/en/hooks)
+
+## Useful MCP Servers
+
+### dbt-mcp
+
+```
+# 1. Install pipx if you don't have it
+brew install pipx
+pipx ensurepath
+
+# 2. Install dbt-redshift
+PIPX_DEFAULT_PYTHON=$(pyenv prefix 3.12.9)/bin/python \
+  PIP_INDEX_URL=https://pypi.org/simple/ \
+  pipx install dbt-redshift --include-deps
+
+# 3. Verify installation
+dbt --version
+
+# Get/set the ENV VARs needed by your DBT project
+
+# 4. Add the dbt MCP server to Claude Code
+claude mcp add dbt \
+  -e DBT_PROJECT_DIR=/path/to/data-warehouse/dbt \
+  -e DBT_PATH=$(which dbt) \
+  -e ... \ Add all the DBT ENV VARs required by your DBT project
+  -- uvx dbt-mcp
+```
