@@ -102,7 +102,7 @@ claude mcp add dbt \
   -- uvx dbt-mcp
 ```
 
-### Langfuse MCP
+### Langfuse MCP & CLI
 
 Inspired by [Hamel Husain's Evals Skills](https://hamel.dev/blog/posts/evals-skills/) for Claude Code.
 [Langfuse MCP Documentation](https://langfuse.com/docs/api-and-data-platform/features/mcp-server)
@@ -112,4 +112,10 @@ LANGFUSE_BASE_64_TOKEN=$(echo -n "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | b
 
 claude mcp add --transport http langfuse https://us.cloud.langfuse.com/api/public/mcp \
     --header "Authorization: Basic $LANGFUSE_BASE_64_TOKEN"
+```
+
+The Langfuse MCP server only includes prompts as of March 2026. An [easy alternative](https://github.com/orgs/langfuse/discussions/10605#discussioncomment-15799558) is to use langfuse-cli and wire it up as a tool ([github](https://github.com/langfuse/langfuse-cli)).
+
+```
+npx langfuse-cli get-skill
 ```
