@@ -30,13 +30,7 @@ Shared configuration files for [Claude Code](https://docs.anthropic.com/en/docs/
    mkdir -p ~/.claude
    ```
 
-3. **Enable marketplace plugins**
-
-   ```
-   /plugin marketplace add hamelsmu/evals-skills
-   ```
-
-4. **Symlink config files and directories**
+3. **Symlink config files and directories**
 
    ```sh
 
@@ -61,7 +55,7 @@ Shared configuration files for [Claude Code](https://docs.anthropic.com/en/docs/
 
    > **Note:** `ln -sfn` is used for directories so the symlink replaces any existing directory symlink cleanly.
 
-5. **Verify**
+4. **Verify**
 
    ```sh
    ls -la ~/.claude/settings.json ~/.claude/CLAUDE.md ~/.claude/commands ~/.claude/hooks
