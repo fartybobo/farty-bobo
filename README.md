@@ -73,7 +73,6 @@ Shared configuration files for [Claude Code](https://docs.anthropic.com/en/docs/
 
 ## TODOs
 
-- [Hamel Husain's Evals skills](https://hamel.dev/blog/posts/evals-skills/)
 - https://github.com/simonw/claude-code-transcripts
 
 ## Useful Links
