@@ -21,7 +21,7 @@
     "quickEntryDictationShortcut": "off",
     "coworkScheduledTasksEnabled": true,
     "ccdScheduledTasksEnabled": true,
-    "sidebarMode": "task",
+    "sidebarMode": "chat",
     "coworkWebSearchEnabled": true
   }
 }

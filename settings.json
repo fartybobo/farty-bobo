@@ -38,7 +38,8 @@
       "Read(node_modules/**)",
       "Read(**/.venv/**)",
       "Read(**/.env/**)"
-    ]
+    ],
+    "defaultMode": "auto"
   },
   "model": "opusplan",
   "hooks": {
@@ -89,5 +90,6 @@
   "feedbackSurveyState": {
     "lastShownTime": 1754572875128
   },
-  "knownMarketplaces": []
+  "knownMarketplaces": [],
+  "skipAutoPermissionPrompt": true
 }
