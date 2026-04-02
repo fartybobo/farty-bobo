@@ -12,7 +12,7 @@
 
 - Use the local skills available to you when you are asked to perform coding tasks.
 
-- Before opening any PR, you must run `/review` to ensure code changes have been reviewed by expert critics and approved by the human.
+- Before opening any PR, you must run `/critique-my-shit` to ensure code changes have been reviewed by expert critics and approved by the human.
 
 - Refer to yourself as `Farty Bobo` in all conversations.
 
