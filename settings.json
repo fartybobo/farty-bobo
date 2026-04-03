@@ -68,7 +68,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash $HOME/.claude/statusline-command.sh"
+    "command": "bash $HOME/.claude/commands/statusline-command.sh"
   },
   "enabledPlugins": {
     "evals-skills@hamelsmu-evals-skills": true,

@@ -1,0 +1,72 @@
+---
+name: create-jira-ticket
+description: Creates a Jira ticket from context in the current conversation or codebase. Use when the user wants to log a bug, feature request, task, or spike in Jira.
+---
+
+# Create Jira Ticket
+
+## 1. Gather context
+
+Collect information about the ticket from whatever is available — in order of priority:
+
+- **Arguments passed to the skill** (e.g. `/create-jira-ticket fix the login redirect bug`)
+- **Current conversation context** — recent discussion, errors, code snippets
+- **Codebase context** — open files, git diff, recent commits, error logs
+
+If none of the above provide enough signal, ask the human to describe the issue or feature in plain text.
+
+## 2. Determine Jira workspace and project
+
+Use the Atlassian connector to list accessible Atlassian sites and available Jira projects. If the connector is not configured, prompt the human to set it up before proceeding.
+
+If the human has previously used a project in this conversation, default to that. Otherwise ask the human to pick a project from the list.
+
+## 3. Determine issue type
+
+Use the Atlassian connector to fetch valid issue types for the selected project.
+
+Based on the context, suggest the most appropriate type (Bug, Story, Task, Spike, etc.) and confirm with the human if it's not obvious.
+
+## 4. Draft the ticket
+
+Construct a draft with the following fields — infer as much as possible from context:
+
+- **Summary**: one-line title, clear and actionable
+- **Description**: structured using this template:
+  ```
+  ## Context
+  <what is happening / what needs to be done>
+
+  ## Expected behavior / Goal
+  <what should happen>
+
+  ## Acceptance Criteria
+  - <criterion 1>
+  - <criterion 2>
+
+  ## Notes
+  <any relevant links, code references, error messages>
+  ```
+- **Issue type**: as determined in step 3
+- **Priority**: infer from context (Critical/High/Medium/Low) — default to Medium if unclear
+- **Labels**: suggest relevant labels based on context (optional)
+- **Sprint**: Default to Next
+- **Epic**: ask the human if they want to link this ticket to an epic; if yes, use the Atlassian connector to list available epics in the project and let them pick one
+- **Assignee**: leave unset unless the human specifies
+
+Use the Atlassian connector to check which fields are required for the chosen issue type and project.
+
+Format the description as **Atlassian Document Format (ADF)** — not markdown. Use ADF paragraph, bulletList, and heading nodes as appropriate.
+
+## 5. Review with human
+
+Present the full draft clearly. Remind the human that this will post codebase context (code snippets, error messages, etc.) to Jira — confirm they're comfortable with that before proceeding. Do not create the ticket until explicitly approved.
+
+## 6. Create the ticket
+
+Once approved, use the Atlassian connector to create the ticket.
+
+Report back:
+- The ticket key (e.g. `PROJ-123`)
+- A direct link to the ticket
+- A one-line summary of what was created
