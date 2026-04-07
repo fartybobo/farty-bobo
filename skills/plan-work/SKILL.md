@@ -15,5 +15,9 @@ description: Used to gather requirements, clarify scope, and create implementati
 3. Ask the human clarifying questions to remove all ambiguous details. You will hand off the task to teams and other skills. You must have mastery of all the edge cases and all the requirements to be successful.
 4. Identify the git repos that should be used to implement changes from the task description or from the current folder contents. If that is not possible, prompt the human to enter the paths to the relevant repos.
 5. Once you have 100% task clarity, create an implementation plan (ideally markdown file) and include necessary artifacts (e.g. visualizations) that describe the code and architecture change and makes it easy to review by humans and other skills. Leverage `/audit-security` skill to validate security of the proposed changes.
-6. Prompt the human to review the implementation plan and prompt them to either request changes in the chat interface or by adjusting the implementation plan files themselves.
-7. Once the implementation plan is approved, you will pass a summary of the task details, the implementation plan files and all the generated artifacts to the `/build` skill.
+6. If the task includes AWS or CDK work, enrich the plan using the `deploy-on-aws` MCP tools before writing the final plan:
+   - `awsknowledge` — look up official AWS service docs, recommend services, retrieve SOPs
+   - `awsiac` — search CDK/CloudFormation docs, validate templates, get CDK best practices
+   - `awspricing` — estimate costs for the proposed architecture
+7. Prompt the human to review the implementation plan and prompt them to either request changes in the chat interface or by adjusting the implementation plan files themselves.
+8. Once the implementation plan is approved, you will pass a summary of the task details, the implementation plan files and all the generated artifacts to the `/build` skill.
