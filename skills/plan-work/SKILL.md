@@ -97,8 +97,31 @@ Present the implementation plan and acceptance tests (with the AC coverage matri
 
 **Only after the human approves** both the plan and the tests: run `/audit-security` on the final plan. If `/audit-security` surfaces a HIGH severity finding, treat it as a blocker — do not proceed to Step 9 until it is resolved.
 
-### 9. Commit and Hand Off
+### 9. Write the Decisions Scratch File
+
+Before handing off to `/build`, record all human decisions made during this planning session to `plans/decisions-{ticket-id}.md`. This file is the source of truth for the Decision Log that `/critique` will post to Jira — it must exist before `/critique` runs.
+
+Record only:
+- Choices made between two or more alternatives (what was chosen and what was rejected)
+- Explicit deferrals (what was ruled out-of-scope and why)
+- Constraints or clarifications the human stated that are not obvious from the plan itself
+
+Do not include: implementation details visible in the plan file, security finding descriptions by name, or verbatim quotes from code or diffs.
+
+Format:
+```
+## Decisions — {ticket-id}
+_Written by /plan-work on YYYY-MM-DD_
+
+### Planning
+- Chose X over Y — reason: <human-stated reason>
+- Deferred Z to follow-up — reason: <human-stated reason>
+```
+
+This file is **not** committed to the repo. It is a session scratch file consumed and deleted by `/critique` in Step 7.
+
+### 10. Commit and Hand Off
 
 After approval and a clean security audit:
-1. Commit the plan file and acceptance test file to the current feature branch. Show the diff to the human before committing. Do not stage dotfiles, secrets, or temporary review files.
-2. Pass a summary of the task details, the plan file path, the acceptance test file path, and all generated artifacts to the `/build` skill.
+1. Commit the plan file and acceptance test file to the current feature branch. Show the diff to the human before committing. Do not stage dotfiles, secrets, or the `decisions-*.md` scratch file.
+2. Pass a summary of the task details, the plan file path, the acceptance test file path, the decisions scratch file path, and all generated artifacts to the `/build` skill.
