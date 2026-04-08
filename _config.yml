@@ -1,0 +1,5 @@
+theme: jekyll-theme-midnight
+title: Farty Bobo
+description: Claude Code configuration files and shared tooling
+baseurl: ""
+markdown: kramdown
