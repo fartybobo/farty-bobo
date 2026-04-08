@@ -1,5 +1,5 @@
 ---
-name: plan-work
+name: plan-task
 description: Used to gather requirements, clarify scope, and create implementation plans for new feature requests or bug fixes
 ---
 
@@ -111,7 +111,7 @@ Do not include: implementation details visible in the plan file, security findin
 Format:
 ```
 ## Decisions — {ticket-id}
-_Written by /plan-work on YYYY-MM-DD_
+_Written by /plan-task on YYYY-MM-DD_
 
 ### Planning
 - Chose X over Y — reason: <human-stated reason>

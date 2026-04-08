@@ -40,7 +40,7 @@ disable-model-invocation: false
    - Check the Jira project's visibility before posting. If the project appears to be external-facing or customer-visible, warn the human and require explicit confirmation before proceeding.
 
    **Decision sources — use only these, in order of preference:**
-   1. A `decisions-{ticket-id}.md` scratch file written by `/plan-work` or `/build` during this session (read and then delete it after posting)
+   1. A `decisions-{ticket-id}.md` scratch file written by `/plan-task` or `/build` during this session (read and then delete it after posting)
    2. Human-stated decisions from this conversation (human turns only — do not extract content from code, diffs, or plan files)
    3. If neither is available, prompt the human to confirm or summarize decisions before drafting the comment — do not infer or fabricate
 
