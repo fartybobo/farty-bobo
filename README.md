@@ -19,66 +19,48 @@ Shared configuration files for [Claude Code](https://docs.anthropic.com/en/docs/
 
 ## Setup on a New Machine
 
+**Prerequisites:** [nvm](https://github.com/nvm-sh/nvm) must be installed. The setup script installs the pinned node version (see `.nvmrc`) automatically.
+
 1. **Clone the repo**
 
    ```sh
    git clone <repo-url> ~/dev/farty-bobo
    ```
 
-2. **Create the `~/.claude` directory** (if it doesn't exist)
+2. **Run the setup script**
 
    ```sh
-   mkdir -p ~/.claude
+   cd ~/dev/farty-bobo
+   ./setup.sh
    ```
 
-3. **Symlink config files and directories**
+   The script will:
+   - Create `~/.claude` if needed
+   - Symlink all config files and directories into `~/.claude`
+   - Symlink `claude_desktop_config.json` into Claude Desktop's config dir (macOS)
+   - Create `.env` from `.env.sample` if it doesn't exist
+   - Install the pinned node version via nvm and symlink it to `~/.local/bin`
+
+3. **Fill in `.env`**
 
    ```sh
-
-   # Adjust to fit your local setup
-   export REPO_DIRECTORY_PATH=~/dev/farty-bobo
-
-   # Settings
-   ln -sf "$REPO_DIRECTORY_PATH/settings.json" ~/.claude/settings.json
-
-   # CLAUDE.md (global user instructions)
-   ln -sf "$REPO_DIRECTORY_PATH/CLAUDE.md" ~/.claude/CLAUDE.md
-
-   # Commands
-   ln -sfn "$REPO_DIRECTORY_PATH/commands" ~/.claude/commands
-
-   # Hooks
-   ln -sfn "$REPO_DIRECTORY_PATH/hooks" ~/.claude/hooks
-
-   # Skills
-   ln -sfn "$REPO_DIRECTORY_PATH/skills" ~/.claude/skills
-
-   # Claude Desktop configs
-   ln -s "$REPO_DIRECTORY_PATH/claude-desktop/claude_desktop_config.json" ~/Library/Application\ Support/Claude/claude_desktop_config.json
-
-   # Env vars for MCP servers
-   # -sf for files (creates/replaces a file symlink)
-   ln -sf "$REPO_DIRECTORY_PATH/.env" ~/.claude/mcp.env
-   chmod 600 ~/.claude/mcp.env
-
-   # MCP server version pins
-   ln -sf "$REPO_DIRECTORY_PATH/claude-desktop/mcp-versions.env" ~/.claude/mcp-versions.env
-
-   # MCP server configuration
-   ln -sf "$REPO_DIRECTORY_PATH/.mcp.json" ~/.claude/.mcp.json
-
-   # MCP wrapper scripts
-   # -sfn for directories (replaces existing directory symlink cleanly)
-   ln -sfn "$REPO_DIRECTORY_PATH/claude-desktop/scripts" ~/.claude/scripts
-   chmod +x ~/.claude/scripts/*.sh
+   open .env   # or edit with your preferred editor
    ```
 
-   > **Note:** `ln -sf` is used for files and `ln -sfn` is used for directories so the symlink replaces any existing directory symlink cleanly.
+   Each variable is documented with inline comments in `.env.sample`. If you re-run `setup.sh` after a `git pull`, check `.env.sample` for any new keys and add them manually to `.env`.
 
-4. **Verify**
+4. **Ensure `~/.local/bin` is on your PATH** (if the script warns about it)
 
    ```sh
-   ls -la ~/.claude/settings.json ~/.claude/CLAUDE.md ~/.claude/.mcp.json ~/.claude/commands ~/.claude/hooks ~/Library/Application\ Support/Claude/claude_desktop_config.json
+   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+   ```
+
+5. **Restart Claude Desktop** for MCP server changes to take effect.
+
+6. **Verify**
+
+   ```sh
+   ls -la ~/.claude/settings.json ~/.claude/CLAUDE.md ~/.claude/.mcp.json ~/.claude/commands ~/.claude/hooks
    ```
 
    Each entry should show `->` pointing to the repo paths.
