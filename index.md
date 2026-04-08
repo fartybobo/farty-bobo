@@ -276,6 +276,13 @@ title: Farty Bobo
     100% { text-shadow: none; transform: none; clip-path: none; }
   }
 
+  /* ── TABLET (800–1100px) — mascot smaller so it doesn't eat the text ── */
+  @media (min-width: 801px) and (max-width: 1100px) {
+    .fb-mascot { height: 70svh; }
+    .fb-left { width: 56vw; max-width: 56vw; padding: 60px 5vw; }
+    .fb-tagline { font-size: clamp(3.5rem, 7vw, 6rem); }
+  }
+
   /* ── MOBILE ── */
   @media (max-width: 800px) {
     .fb-hero {
