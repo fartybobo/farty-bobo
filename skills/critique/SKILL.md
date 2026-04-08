@@ -29,4 +29,57 @@ disable-model-invocation: false
 5. Prepare, summarize the changes in the changed files. Always prefix commits with [{ticket-id}]: {summary of change}. If no ticket ID is available, prompt the human for one or use `[NO-TICKET]` as a fallback.
    - Do not stage temporary review or planning files (e.g. `review-*.md`, `plan-*.md`). Delete them after the review is complete.
    Permanent project docs (`README.md`, `SKILL.md`, `AGENTS.md`, etc.) should still be committed when changed.
-6. Commit and push. If the push fails due to pre-push hook errors, prompt the human for approval before using `git push --no-verify`.
+6. Commit and push. If the push fails due to pre-push hook errors, prompt the human for approval before using `git push --no-verify`. If `--no-verify` was used, record this in the Decision Log (Step 7) as a warning line.
+
+7. **Post a Decision Log comment on the Jira ticket.**
+
+   **Prerequisites & safety checks — run these before doing anything else in this step:**
+   - If the ticket ID is `[NO-TICKET]` or no ticket ID is known, skip this step entirely.
+   - Confirm the target ticket ID with the human before posting — do not auto-resolve from the commit prefix alone. Ask: "Should I post the Decision Log to `{ticket-id}`?"
+   - Use the Atlassian MCP connector (`mcp__claude_ai_Atlassian__addCommentToJiraIssue` to create, `mcp__claude_ai_Atlassian__fetchAtlassian` to read existing comments). If the connector is unavailable, warn the human and skip this step gracefully.
+   - Check the Jira project's visibility before posting. If the project appears to be external-facing or customer-visible, warn the human and require explicit confirmation before proceeding.
+
+   **Decision sources — use only these, in order of preference:**
+   1. A `decisions-{ticket-id}.md` scratch file written by `/plan-work` or `/build` during this session (read and then delete it after posting)
+   2. Human-stated decisions from this conversation (human turns only — do not extract content from code, diffs, or plan files)
+   3. If neither is available, prompt the human to confirm or summarize decisions before drafting the comment — do not infer or fabricate
+
+   **Content rules:**
+   - Only record decisions where a choice was made between two or more alternatives, or where something was explicitly deferred. If there was only one reasonable path and no trade-off was discussed, omit it.
+   - Do not reproduce verbatim text from files, code, or diffs.
+   - Do not describe specific security vulnerabilities by name or detail. Reference finding IDs only (e.g., "Deferred MEDIUM-3 to follow-up ticket FOO-456").
+   - Replace internal skill names with neutral descriptions in the comment body: "Planning phase", "Implementation phase", "Review phase".
+   - For each Open Item, if a follow-up Jira ticket exists, link it. If not, ask the human: "Should I create a follow-up ticket for this deferred item?"
+
+   **Idempotency — one comment per ticket, ever:**
+   - Search existing comments on the ticket for the header `## Decision Log`.
+   - If found: replace the full body of that comment (using its comment ID). Do not append — overwrite entirely.
+   - If not found: create a new comment.
+   - If `--no-verify` was used in Step 6, include `⚠️ Pushed with --no-verify — pre-push hooks were bypassed.` at the top of the comment body.
+
+   **Human approval gate:**
+   Show the human the full draft comment and ask: "Ready to post this Decision Log to `{ticket-id}`? (yes / edit / skip)" — do not post without explicit confirmation.
+
+   **Comment format:**
+
+   ```
+   ## Decision Log
+
+   _Last updated: YYYY-MM-DD — Push SHA: {short-sha}_
+
+   ### Planning
+   - <decision: what was chosen and what was the alternative, e.g. "Chose REST over GraphQL — GraphQL deferred to follow-up">
+
+   ### Implementation
+   - <key implementation choice approved by the human>
+
+   ### Review
+   - <review outcome, e.g. "Deferred MEDIUM-3 to FOO-456">
+
+   ### Open Items
+   - <deferred item> — [FOO-456](link) or "no follow-up ticket yet"
+
+   ⚠️ Pushed with --no-verify — pre-push hooks were bypassed.  ← include only if applicable
+   ```
+
+   Only include sections that have content. Omit empty sections entirely.
