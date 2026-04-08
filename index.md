@@ -287,18 +287,17 @@ title: Farty Bobo
   @media (max-width: 800px) {
     .fb-hero {
       flex-direction: column;
-      align-items: flex-start;
+      align-items: stretch;
       min-height: 100svh;
       padding-bottom: 0;
-      position: relative;
     }
 
-    /* text full-width at top, gradient fades into mascot below */
+    /* text full-width at top */
     .fb-left {
       position: relative; z-index: 3;
       width: 100%; max-width: 100%;
-      padding: 48px 6vw 32px;
-      background: linear-gradient(to bottom, rgba(13,11,30,1) 65%, transparent 100%);
+      padding: 44px 6vw 28px;
+      flex-shrink: 0;
     }
 
     .fb-tagline {
@@ -308,23 +307,33 @@ title: Farty Bobo
 
     .fb-desc { font-size: 0.88rem; max-width: 100%; line-height: 1.75; }
 
-    /* mascot centered, LARGE, anchored to bottom — fills the viewport width */
+    /* RESET all desktop absolute positioning — use normal flow */
     .fb-mascot-wrap {
-      position: absolute;
-      bottom: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 92vw;
-      height: auto;
-      display: flex; align-items: flex-end; justify-content: center;
-      z-index: 1;
+      position: relative !important;
+      right: auto !important;
+      top: auto !important;
+      bottom: auto !important;
+      left: auto !important;
+      transform: none !important;
+      /* kill entry animation — it conflicts with transform and leaves opacity:0 */
+      animation: none !important;
+      opacity: 1 !important;
+      width: 100%;
+      flex: 1;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      min-height: 220px;
     }
 
     .fb-mascot {
-      width: 100%; height: auto;
+      width: 86vw;
+      height: auto;
+      max-height: 52svh;
+      object-fit: contain;
       filter:
-        drop-shadow(0 -20px 60px rgba(127,119,221,0.85))
-        drop-shadow(0 0 40px rgba(127,119,221,0.4));
+        drop-shadow(0 -16px 50px rgba(127,119,221,0.9))
+        drop-shadow(0 0 30px rgba(127,119,221,0.5));
     }
 
     .fb-content { grid-template-columns: 1fr; }
