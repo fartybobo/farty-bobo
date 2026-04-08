@@ -4,39 +4,33 @@ title: Farty Bobo
 ---
 
 <style>
-  /* ── Reset Midnight theme noise ── */
-  #main_content_wrap, #main_content { background: transparent !important; border: none !important; box-shadow: none !important; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  /* ── Tokens ── */
   :root {
     --yellow: #f5e642;
     --black: #0a0a0a;
     --off-black: #111;
     --dim: #1a1a1a;
-    --border: #2a2a2a;
+    --border: #222;
     --text: #e8e8e8;
-    --muted: #666;
+    --muted: #777;
     --font-display: 'Bebas Neue', Impact, sans-serif;
     --font-body: 'JetBrains Mono', 'Courier New', monospace;
   }
 
-  /* ── Page shell ── */
   .fb-page {
     font-family: var(--font-body);
     color: var(--text);
     background: var(--black);
-    min-height: 100vh;
-    padding: 0;
+    width: 100%;
     overflow-x: hidden;
   }
 
   /* ── HERO ── */
   .fb-hero {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 80px 6vw;
+    width: 100%;
+    padding: 72px 6vw 72px;
     border-bottom: 3px solid var(--yellow);
     overflow: hidden;
   }
@@ -47,10 +41,10 @@ title: Farty Bobo
     inset: 0;
     background: repeating-linear-gradient(
       -55deg,
-      transparent,
+      transparent 0,
       transparent 80px,
-      rgba(245,230,66,0.025) 80px,
-      rgba(245,230,66,0.025) 81px
+      rgba(245,230,66,0.03) 80px,
+      rgba(245,230,66,0.03) 81px
     );
     pointer-events: none;
   }
@@ -60,97 +54,96 @@ title: Farty Bobo
     z-index: 1;
     display: flex;
     align-items: center;
-    gap: 6vw;
+    gap: 5vw;
   }
 
   .fb-mascot {
     flex: 0 0 auto;
-    width: clamp(180px, 22vw, 300px);
-    filter: drop-shadow(0 0 40px rgba(245,230,66,0.3));
+    width: clamp(140px, 18vw, 260px);
+    filter: drop-shadow(0 0 36px rgba(245,230,66,0.25));
     animation: fb-float 4s ease-in-out infinite;
   }
 
   @keyframes fb-float {
     0%, 100% { transform: translateY(0) rotate(-1deg); }
-    50%       { transform: translateY(-12px) rotate(1deg); }
+    50%       { transform: translateY(-10px) rotate(1deg); }
   }
 
   .fb-title-block { flex: 1 1 auto; }
 
   .fb-wordmark {
     display: block;
-    width: clamp(260px, 40vw, 560px);
-    margin-bottom: 8px;
+    width: clamp(220px, 36vw, 520px);
+    margin-bottom: 12px;
     filter: invert(1) sepia(1) saturate(5) hue-rotate(5deg);
   }
 
   .fb-tagline {
     font-family: var(--font-display);
-    font-size: clamp(2.2rem, 5.5vw, 5rem);
+    font-size: clamp(2rem, 5vw, 4.5rem);
     color: var(--yellow);
     letter-spacing: 0.03em;
     line-height: 1;
-    margin: 0 0 28px;
+    margin-bottom: 24px;
     text-transform: uppercase;
   }
 
   .fb-desc {
-    font-size: clamp(0.78rem, 1.2vw, 0.92rem);
+    font-size: clamp(0.75rem, 1.1vw, 0.88rem);
     color: var(--muted);
-    max-width: 500px;
-    line-height: 1.7;
-    margin: 0;
+    max-width: 480px;
+    line-height: 1.75;
   }
 
-  .fb-desc a { color: var(--yellow); text-decoration: none; border-bottom: 1px solid rgba(245,230,66,0.4); }
+  .fb-desc a { color: var(--yellow); text-decoration: none; border-bottom: 1px solid rgba(245,230,66,0.35); }
   .fb-desc a:hover { border-bottom-color: var(--yellow); }
 
-  /* ── CONTENT ── */
+  /* ── CONTENT GRID ── */
   .fb-content {
-    padding: 60px 6vw 100px;
+    width: 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 4px;
+    gap: 0;
   }
 
   .fb-section {
     background: var(--off-black);
-    border: 1px solid var(--border);
-    padding: 40px 36px;
-    transition: border-color 0.2s, background 0.2s;
+    border-top: 3px solid var(--border);
+    border-right: 1px solid var(--border);
+    padding: 48px 5vw;
+    transition: background 0.2s;
   }
 
-  .fb-section:hover {
-    border-color: var(--yellow);
-    background: var(--dim);
-  }
+  .fb-section:last-child { border-right: none; }
+  .fb-section:hover { background: var(--dim); }
 
   .fb-section h2 {
     font-family: var(--font-display);
     font-size: 2rem;
     color: var(--yellow);
     letter-spacing: 0.06em;
-    margin: 0 0 28px;
+    margin-bottom: 28px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border);
   }
 
-  .fb-items { list-style: none; margin: 0; padding: 0; }
+  .fb-items { list-style: none; }
+
   .fb-items li {
     display: flex;
-    gap: 16px;
-    padding: 10px 0;
+    gap: 20px;
+    padding: 12px 0;
     border-bottom: 1px solid var(--border);
-    font-size: 0.83rem;
-    line-height: 1.5;
+    font-size: 0.82rem;
+    line-height: 1.55;
   }
+
   .fb-items li:last-child { border-bottom: none; }
 
   .fb-item-key {
-    flex: 0 0 auto;
+    flex: 0 0 130px;
     color: var(--yellow);
     font-weight: 700;
-    min-width: 130px;
   }
 
   .fb-item-val { color: var(--muted); }
@@ -159,16 +152,16 @@ title: Farty Bobo
     background: #000;
     border: 1px solid var(--border);
     border-left: 3px solid var(--yellow);
-    padding: 24px 28px;
-    font-size: 0.82rem;
+    padding: 20px 24px;
+    font-size: 0.8rem;
     line-height: 2;
-    color: #ccc;
+    color: #bbb;
     overflow-x: auto;
-    margin: 0 0 28px;
+    margin-bottom: 28px;
   }
 
   .fb-codeblock .cmd { color: var(--yellow); }
-  .fb-codeblock .arg { color: #aaa; }
+  .fb-codeblock .arg { color: #888; }
 
   .fb-link {
     display: inline-block;
@@ -185,19 +178,21 @@ title: Farty Bobo
 
   /* ── FOOTER ── */
   .fb-footer {
+    width: 100%;
     text-align: center;
-    padding: 32px;
-    font-size: 0.7rem;
+    padding: 24px;
+    font-size: 0.65rem;
     color: #333;
     border-top: 1px solid var(--border);
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
   }
 
-  @media (max-width: 700px) {
+  @media (max-width: 680px) {
     .fb-hero-inner { flex-direction: column; align-items: flex-start; }
-    .fb-mascot { width: 140px; }
+    .fb-mascot { width: 120px; }
     .fb-content { grid-template-columns: 1fr; }
+    .fb-section { border-right: none; border-bottom: 1px solid var(--border); }
   }
 </style>
 
