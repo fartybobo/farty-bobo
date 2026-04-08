@@ -7,13 +7,13 @@ title: Farty Bobo
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --yellow: #f5e642;
-    --black: #0a0a0a;
-    --off-black: #111;
-    --dim: #1a1a1a;
-    --border: #222;
-    --text: #e8e8e8;
-    --muted: #777;
+    --yellow: #97C459;
+    --black: #0e0c1a;
+    --off-black: #14112a;
+    --dim: #1c1836;
+    --border: #2a2550;
+    --text: #e8e6f5;
+    --muted: #7f77aa;
     --font-display: 'Bebas Neue', Impact, sans-serif;
     --font-body: 'JetBrains Mono', 'Courier New', monospace;
   }
@@ -43,8 +43,8 @@ title: Farty Bobo
       -55deg,
       transparent 0,
       transparent 80px,
-      rgba(245,230,66,0.03) 80px,
-      rgba(245,230,66,0.03) 81px
+      rgba(127,119,221,0.04) 80px,
+      rgba(127,119,221,0.04) 81px
     );
     pointer-events: none;
   }
@@ -60,7 +60,7 @@ title: Farty Bobo
   .fb-mascot {
     flex: 0 0 auto;
     width: clamp(140px, 18vw, 260px);
-    filter: drop-shadow(0 0 36px rgba(245,230,66,0.25));
+    filter: drop-shadow(0 0 36px rgba(127,119,221,0.4));
     animation: fb-float 4s ease-in-out infinite;
   }
 
@@ -75,7 +75,7 @@ title: Farty Bobo
     display: block;
     width: clamp(220px, 36vw, 520px);
     margin-bottom: 12px;
-    filter: invert(1) sepia(1) saturate(5) hue-rotate(5deg);
+    filter: none;
   }
 
   .fb-tagline {
