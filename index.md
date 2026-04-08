@@ -49,7 +49,6 @@ title: Farty Bobo
     overflow: hidden;
   }
 
-  /* diagonal scratch lines */
   .fb-hero::before {
     content: '';
     position: absolute;
@@ -137,11 +136,6 @@ title: Farty Bobo
     background: var(--dim);
   }
 
-  /* span both columns for setup */
-  .fb-section--wide {
-    grid-column: 1 / -1;
-  }
-
   .fb-section h2 {
     font-family: var(--font-display);
     font-size: 2rem;
@@ -172,7 +166,6 @@ title: Farty Bobo
 
   .fb-item-val { color: var(--muted); }
 
-  /* code block */
   .fb-codeblock {
     background: #000;
     border: 1px solid var(--border);
@@ -212,7 +205,6 @@ title: Farty Bobo
     text-transform: uppercase;
   }
 
-  /* ── Responsive ── */
   @media (max-width: 700px) {
     .fb-hero-inner { flex-direction: column; align-items: flex-start; }
     .fb-mascot { width: 140px; }
@@ -237,9 +229,10 @@ title: Farty Bobo
         />
         <p class="fb-tagline">We Got the f***ing Gas</p>
         <p class="fb-desc">
-          Shared <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a>
-          configuration files, hooks, and skills. Clone and symlink to get a fully
-          configured Claude Code environment on any machine.
+          Every machine you own is a different hellscape of broken configs and
+          missing context. This fixes that. It's <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a>
+          — but opinionated, angry, and actually set up right.
+          Clone it. Symlink it. Stop suffering.
         </p>
       </div>
     </div>
@@ -248,39 +241,39 @@ title: Farty Bobo
   <div class="fb-content">
 
     <div class="fb-section">
-      <h2>What's In Here</h2>
+      <h2>What the Hell's In Here</h2>
       <ul class="fb-items">
         <li>
           <span class="fb-item-key">CLAUDE.md</span>
-          <span class="fb-item-val">Global instructions and behavior rules for Claude Code</span>
+          <span class="fb-item-val">Tells Claude who the f*** it is and how to behave. Non-negotiable.</span>
         </li>
         <li>
           <span class="fb-item-key">settings.json</span>
-          <span class="fb-item-val">Model, hooks, and permission configuration</span>
+          <span class="fb-item-val">Model, hooks, permissions. Don't touch it unless you know what you're doing.</span>
         </li>
         <li>
           <span class="fb-item-key">skills/</span>
-          <span class="fb-item-val">Custom slash commands and automation</span>
+          <span class="fb-item-val">Real slash commands. Not the useless defaults that ship out of the box.</span>
         </li>
         <li>
           <span class="fb-item-key">hooks/</span>
-          <span class="fb-item-val">Pre/post edit shell hooks</span>
+          <span class="fb-item-val">Shell scripts that fire before/after edits so you don't shoot yourself in the foot.</span>
         </li>
         <li>
           <span class="fb-item-key">commands/</span>
-          <span class="fb-item-val">Status line and other shell commands</span>
+          <span class="fb-item-val">Status line and other crap Claude needs to actually function.</span>
         </li>
       </ul>
     </div>
 
     <div class="fb-section">
-      <h2>Quick Setup</h2>
+      <h2>Just Do It Already</h2>
       <div class="fb-codeblock">
         <span class="cmd">git clone</span> <span class="arg">https://github.com/fartybobo/farty-bobo ~/dev/farty-bobo</span><br/>
         <span class="cmd">cd</span> <span class="arg">~/dev/farty-bobo</span><br/>
         <span class="cmd">./setup.sh</span>
       </div>
-      <a class="fb-link" href="https://github.com/fartybobo/farty-bobo">Full Docs →</a>
+      <a class="fb-link" href="https://github.com/fartybobo/farty-bobo">Read the Damn Docs →</a>
     </div>
 
   </div>
