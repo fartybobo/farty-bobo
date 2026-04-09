@@ -1,6 +1,10 @@
-# farty-bobo
+# Farty Bobo
 
-Shared configuration files for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Clone this repo and symlink the files into `~/.claude/` to set up a new machine quickly.
+> Opinionated [Claude Code](https://docs.anthropic.com/en/docs/claude-code) configuration that actually works. Custom skills, hooks, settings, and MCP servers — clone it, symlink it, stop suffering.
+
+**[fartybobo.com](https://fartybobo.com)**
+
+Shared configuration files for Claude Code. Clone this repo and symlink the files into `~/.claude/` to set up a new machine quickly.
 
 ## Repo Structure
 

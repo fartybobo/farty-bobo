@@ -4,3 +4,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
 <link rel="icon" type="image/png" sizes="680x680" href="{{ '/logos/fartybobo_angry_mascot_680.png' | relative_url }}" />
 <link rel="apple-touch-icon" href="{{ '/logos/fartybobo_angry_mascot_680.png' | relative_url }}" />
+
+<!-- JSON-LD structured data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "{{ site.title }}",
+  "description": "{{ site.description }}",
+  "url": "{{ site.url }}",
+  "codeRepository": "https://github.com/fartybobo/farty-bobo",
+  "programmingLanguage": ["Bash", "JSON"],
+  "runtimePlatform": "Claude Code",
+  "author": {
+    "@type": "Organization",
+    "name": "Farty Bobo",
+    "url": "https://fartybobo.com"
+  },
+  "license": "https://github.com/fartybobo/farty-bobo/blob/main/LICENSE",
+  "keywords": ["claude code", "claude code configuration", "claude code settings", "claude code skills", "claude code hooks", "mcp servers", "ai developer tools", "llm configuration"]
+}
+</script>

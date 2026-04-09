@@ -1,6 +1,10 @@
 ---
 layout: default
-title: Farty Bobo
+title: "Farty Bobo — Opinionated Claude Code Configuration"
+description: >-
+  Clone it. Symlink it. Stop suffering. Opinionated Claude Code configuration
+  with custom skills, hooks, settings, and MCP servers for every machine you own.
+image: /logos/fartybobo_angry_mascot_1360.png
 ---
 
 <style>

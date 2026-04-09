@@ -1,4 +1,29 @@
 title: Farty Bobo
-description: Claude Code configuration files and shared tooling
-baseurl: "/farty-bobo"
+description: >-
+  Opinionated Claude Code configuration that actually works. Skills, hooks,
+  settings, and MCP servers — clone it, symlink it, stop suffering.
+url: "https://fartybobo.com"
+baseurl: ""
 markdown: kramdown
+
+plugins:
+  - jekyll-sitemap
+  - jekyll-seo-tag
+
+# SEO / social
+author: Farty Bobo
+lang: en
+logo: /logos/fartybobo_angry_mascot_680.png
+social:
+  name: Farty Bobo
+  links:
+    - https://github.com/fartybobo/farty-bobo
+
+twitter:
+  card: summary_large_image
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      image: /logos/fartybobo_angry_mascot_1360.png
