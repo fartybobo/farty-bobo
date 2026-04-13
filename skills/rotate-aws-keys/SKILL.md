@@ -54,6 +54,21 @@ If `jq` is missing, tell the user to install it before running the script:
 - macOS: `brew install jq`
 - Linux: `apt install jq` or `yum install jq`
 
+## Cleaning up old backup files
+
+The rotation script creates timestamped backup files (e.g. `~/.aws/credentials.bak.1713000000`) before modifying credentials. Over time these accumulate. A cleanup script is bundled at `scripts/cleanup-aws-creds-backups.sh`.
+
+When the user asks to clean up old credential backups, or after a successful rotation if the user wants to tidy up:
+
+1. Read the cleanup script at `scripts/cleanup-aws-creds-backups.sh` (in the same directory as this SKILL.md file)
+2. Save it to the user's working directory as `cleanup-aws-creds-backups.sh`
+3. Tell the user to carefully review the script contents before running it, then execute it from their terminal:
+   ```
+   bash cleanup-aws-creds-backups.sh
+   ```
+   The script will list all backup files and prompt for confirmation before deleting anything. **Deletion is irreversible.**
+4. If the user has `AWS_SHARED_CREDENTIALS_FILE` set to a custom path, the script respects that variable automatically — it will look for backups alongside that file, not at `~/.aws/credentials`.
+
 ## Important notes
 
 - **Never run the rotation script yourself.** The credentials file lives on the user's local machine, not in Claude's sandbox. Always hand the script to the user.

@@ -1,19 +1,12 @@
 {
-  "globalShortcut": "Alt+Cmd+C",
   "mcpServers": {
     "dbt": {
       "command": "/bin/bash",
-      "args": [
-        "-c",
-        "~/.claude/scripts/dbt-mcp.sh"
-      ]
+      "args": ["-c", "~/.claude/scripts/dbt-mcp.sh"]
     },
     "awslabs.redshift-mcp-server": {
       "command": "/bin/bash",
-      "args": [
-        "-c",
-        "~/.claude/scripts/redshift-mcp.sh"
-      ]
+      "args": ["-c", "~/.claude/scripts/redshift-mcp.sh"]
     }
   },
   "preferences": {
