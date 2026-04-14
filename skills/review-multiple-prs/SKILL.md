@@ -19,7 +19,42 @@ Use this skill when the user provides 2 or more PR numbers or URLs to review. Un
 ## Step 1 — Identify and classify the PRs
 
 - Collect all PR numbers / URLs from the user's message.
-- If fewer than 2 PRs are provided, redirect the user to `/code-review` instead.
+- If no PRs are specified, run the **PR Discovery** flow below before proceeding.
+- If fewer than 2 PRs are provided (and discovery was not run), redirect the user to `/code-review` instead.
+
+### PR Discovery (when no PRs are specified)
+
+Use `gh` and the GitHub search API to find open PRs by the user's teammates that are awaiting review. Run these steps:
+
+1. **Resolve the org:** extract the org from the `{owner}/{repo}` resolved in Step 0 (e.g. `ProjectAussie`).
+
+2. **Find teammate usernames:** ask the user for a list of names or GitHub handles to search for. If they provide display names (e.g. "Claire", "Tom McT"), resolve them to GitHub logins by searching org members:
+   ```
+   gh api 'orgs/{org}/members' --paginate --jq '.[] | select(.login | test("{name}"; "i")) | .login'
+   ```
+
+3. **Find open PRs by those authors:**
+   ```
+   gh search prs --state open --author {login} --json number,title,url,author,repository --limit 20
+   ```
+   Run one search per author. Collect all results.
+
+4. **Filter to actionable PRs only** — for each PR, fetch its review status:
+   ```
+   gh pr view <number> -R <owner/repo> --json reviewDecision,isDraft,reviewRequests
+   ```
+   Keep only PRs where:
+   - `isDraft: false`, AND
+   - `reviewDecision` is `"REVIEW_REQUIRED"` or `""` (empty = no decision yet), AND
+   - `reviewDecision` is NOT `"APPROVED"`
+
+5. **Bucket by requester type:**
+   - **Your individual review:** PRs where `reviewRequests` contains the current user's login (`gh api user --jq .login`)
+   - **Team approval:** PRs with `REVIEW_REQUIRED` but no individual review request for you — these are waiting on a team
+
+6. **Present the list to the user** grouped by author and bucket, with URLs. Ask: "Should I review all of these, or select a subset?"
+
+7. Once the user confirms the set, continue with the normal Step 1 classification flow using those PRs.
 - For each PR, run `gh pr view <number> --json number,title,state,isDraft,baseRefName,headRefName,createdAt` to get metadata.
 - Determine the relationship between the PRs:
 
