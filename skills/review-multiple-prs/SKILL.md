@@ -39,20 +39,47 @@ Use `gh` and the GitHub search API to find open PRs by the user's teammates that
    ```
    Run one search per author. Collect all results.
 
-4. **Filter to actionable PRs only** — for each PR, fetch its review status:
-   ```
-   gh pr view <number> -R <owner/repo> --json reviewDecision,isDraft,reviewRequests
-   ```
-   Keep only PRs where:
-   - `isDraft: false`, AND
-   - `reviewDecision` is `"REVIEW_REQUIRED"` or `""` (empty = no decision yet), AND
-   - `reviewDecision` is NOT `"APPROVED"`
+4. **Filter to actionable PRs only** — for each PR, fetch its review status and check whether the current user has already reviewed:
+
+   a. Get the current user's login:
+      ```
+      gh api user --jq .login
+      ```
+
+   b. Get PR metadata:
+      ```
+      gh pr view <number> -R <owner/repo> --json reviewDecision,isDraft,reviewRequests
+      ```
+
+   c. Get the current user's most recent review on this PR (if any) and the latest commit date:
+      ```
+      gh api repos/{owner}/{repo}/pulls/{number}/reviews --jq '[.[] | select(.user.login == "{current_user}")] | sort_by(.submitted_at) | last | {state: .state, submitted_at: .submitted_at}'
+      ```
+      ```
+      gh api repos/{owner}/{repo}/pulls/{number}/commits --jq 'last | .commit.committer.date'
+      ```
+
+   d. Keep only PRs where **all** of the following are true:
+      - `isDraft: false`
+      - `reviewDecision` is `"REVIEW_REQUIRED"` or `""` (empty = no decision yet)
+      - `reviewDecision` is NOT `"APPROVED"`
+
+   e. **Skip PRs where the current user is already waiting on the author:**
+      - If the current user's most recent review `state` is `CHANGES_REQUESTED`, AND
+      - The latest commit on the PR is **older** than the review's `submitted_at` timestamp (meaning no new commits since the review)
+      - Then **exclude** this PR — it's waiting on the author to push changes, not on you to re-review
+      - If the author has pushed new commits after your CHANGES_REQUESTED review, **include** it — it needs a follow-up review
 
 5. **Bucket by requester type:**
    - **Your individual review:** PRs where `reviewRequests` contains the current user's login (`gh api user --jq .login`)
    - **Team approval:** PRs with `REVIEW_REQUIRED` but no individual review request for you — these are waiting on a team
 
-6. **Present the list to the user** grouped by author and bucket, with URLs. Ask: "Should I review all of these, or select a subset?"
+6. **Present the list to the user** grouped by author and bucket, with URLs. If any PRs were skipped because the current user is waiting on the author, list them separately:
+
+   > **Skipped (waiting on author after your CHANGES_REQUESTED):**
+   > - {owner}/{repo}#{number} — {title} — last reviewed {date}, no new commits since
+
+   Then ask: "Should I review all of these, or select a subset? I can also include the skipped PRs if you want to re-review them."
 
 7. Once the user confirms the set, continue with the normal Step 1 classification flow using those PRs.
 - For each PR, run `gh pr view <number> --json number,title,state,isDraft,baseRefName,headRefName,createdAt` to get metadata.
