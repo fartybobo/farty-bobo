@@ -38,6 +38,25 @@ disable-model-invocation: false
 
 7a. **Open a pull request.** After a successful push, open a PR using `gh pr create` (or equivalent). Capture the PR URL. If the PR creation fails, skip Steps 7 and 8 and warn the human.
 
+7b. **Bot review loop (draft PRs only).**
+
+   This step only applies when the PR was opened as a **draft**. If the PR is not a draft, skip to Step 8.
+
+   After the draft PR is open, wait for automated reviewers (bots, linters, CI) to post their feedback:
+
+   1. **Ask the human how long to wait.** Prompt: "How many minutes should I wait for bot reviews before proceeding? (default: 5)"
+      - Use the human's answer, or default to 5 minutes if they don't specify.
+      - Use `ScheduleWakeup` with the specified delay (converted to seconds) to set the timer. While waiting, inform the human: "Waiting {N} minutes for bot reviews on {PR_URL}..."
+
+   2. **When the timer fires, run the feedback loop:**
+      - Invoke `/address-pr-comments` — this reads all unresolved comments (including bot comments) and addresses actionable ones. If code changes are made, `/address-pr-comments` will internally invoke `/critique` to commit and push fixes.
+      - Invoke `/resolve-ci-failures` — this checks CI status, investigates failures, and fixes them. If fixes are made, it will internally invoke `/critique` to commit and push.
+
+   3. **Mark the PR as ready for review:**
+      - Run `gh pr ready {number}` to convert the draft PR to ready-for-review status.
+      - Announce to the human: "PR {PR_URL} is now marked ready for human review. Bot feedback has been addressed and CI is passing."
+      - If CI is still failing after `/resolve-ci-failures` (e.g., infrastructure issues that couldn't be auto-fixed), warn the human instead: "PR {PR_URL} is marked ready for review, but CI still has failures that need manual attention: {summary of remaining failures}."
+
 8. **Transition the Jira ticket to Review status.**
 
    Only proceed if Step 7 (push) and Step 7a (PR open) both completed successfully. Skip this step entirely if either failed.
