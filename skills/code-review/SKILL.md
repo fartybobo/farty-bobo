@@ -106,10 +106,10 @@ True inline comments (anchored to a file and line) require either:
     --field event="COMMENT" \
     --field "comments[][path]=path/to/file.ts" \
     --field "comments[][line]=42" \
-    --field "comments[][body]=Farty Bobo says: <finding>"
+    --field "comments[][body]=Gossip Girl says: <finding>"
   ```
 
-Each inline comment body must open with **"Farty Bobo says:"** so the author knows who left it.
+Each inline comment body must open with **"Gossip Girl says:"** so the author knows who left it.
 
 If neither the GitHub MCP nor `gh api` inline posting is feasible, fall back to referencing `file.ts:42` inline in the consolidated summary instead — do not post top-level comment blobs pretending they are inline.
 
@@ -118,7 +118,7 @@ If neither the GitHub MCP nor `gh api` inline posting is feasible, fall back to 
 After inline comments, post a single top-level PR comment with this format:
 
 ```
-## Farty Bobo's Code Review
+## Gossip Girl's Code Review
 
 **Verdict:** APPROVE / REQUEST_CHANGES / COMMENT
 
@@ -134,7 +134,7 @@ After inline comments, post a single top-level PR comment with this format:
 - <something done well>
 
 ---
-_Reviewed by Farty Bobo_
+_Reviewed by Gossip Girl_
 ```
 
 Only include sections that have entries. Omit empty sections entirely. The template above shows two sections as an example — do not copy-paste all section headers when they are empty.
