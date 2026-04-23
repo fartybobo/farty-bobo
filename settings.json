@@ -115,10 +115,6 @@
       }
     }
   },
-  "sandbox": {
-    "enabled": true,
-    "failIfUnavailable": false
-  },
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
   "skipAutoPermissionPrompt": true,
