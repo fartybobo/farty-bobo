@@ -41,7 +41,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus[1m]",
+  "model": "opusplan",
   "hooks": {
     "PostToolUse": [
       {
