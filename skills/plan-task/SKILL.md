@@ -1,7 +1,7 @@
 ---
 name: plan-task
 description: Used to gather requirements, clarify scope, and create implementation plans for new feature requests or bug fixes
-model: opus
+model: opus[1m]
 ---
 
 # Planning Skill for Software Changes
