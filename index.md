@@ -415,6 +415,10 @@ image: /logos/fartybobo_angry_mascot_1360.png
           <span class="fb-item-key">commands/</span>
           <span class="fb-item-val">Status line and other crap Claude needs to actually function.</span>
         </li>
+        <li>
+          <span class="fb-item-key">plugins/</span>
+          <span class="fb-item-val">Don't want the whole thing? Install just what you need with <code>/farty-bobo:install</code>.</span>
+        </li>
       </ul>
     </div>
 

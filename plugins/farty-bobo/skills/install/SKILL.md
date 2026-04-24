@@ -2,14 +2,14 @@
 name: install
 description: >
   Selectively install skills, hooks, and commands from the Farty Bobo config repo
-  (embarkvetlabs/claude-configs) onto this machine — without forking or cloning the whole repo.
+  (fartybobo/farty-bobo) onto this machine — without forking or cloning the whole repo.
   Trigger on: "install farty bobo", "install skills from farty bobo", "get the farty bobo skills",
   "install hooks", "install commands from config repo".
 ---
 
 # Farty Bobo Installer
 
-Fetch the live catalog from `embarkvetlabs/claude-configs`, let the user pick what they want,
+Fetch the live catalog from `fartybobo/farty-bobo`, let the user pick what they want,
 and install it to the right places on this machine.
 
 ## 1. Fetch the catalog
@@ -18,25 +18,25 @@ Run all three in parallel:
 
 ```bash
 # Skills
-gh api "repos/embarkvetlabs/claude-configs/contents/skills" --jq '.[].name'
+gh api "repos/fartybobo/farty-bobo/contents/skills" --jq '.[].name'
 
 # Hooks (.sh files only)
-gh api "repos/embarkvetlabs/claude-configs/contents/hooks" \
+gh api "repos/fartybobo/farty-bobo/contents/hooks" \
   --jq '[.[] | select(.name | endswith(".sh")) | .name]'
 
 # Commands
-gh api "repos/embarkvetlabs/claude-configs/contents/commands" --jq '.[].name'
+gh api "repos/fartybobo/farty-bobo/contents/commands" --jq '.[].name'
 ```
 
 For each skill, fetch its description from the frontmatter:
 ```bash
-gh api "repos/embarkvetlabs/claude-configs/contents/skills/<name>/SKILL.md" \
+gh api "repos/fartybobo/farty-bobo/contents/skills/<name>/SKILL.md" \
   --jq '.content' | base64 -d | head -6
 ```
 
 For each hook, fetch its purpose from the file header:
 ```bash
-gh api "repos/embarkvetlabs/claude-configs/contents/hooks/<name>" \
+gh api "repos/fartybobo/farty-bobo/contents/hooks/<name>" \
   --jq '.content' | base64 -d | head -5
 ```
 
@@ -47,7 +47,7 @@ Fetch all descriptions in parallel — do not loop sequentially.
 Display a categorized list:
 
 ```
-Available from embarkvetlabs/claude-configs:
+Available from fartybobo/farty-bobo:
 
 SKILLS
   • <name> — <description from frontmatter>
@@ -73,12 +73,12 @@ Parse the response. If ambiguous, ask for clarification.
 
 For each selected skill, list the files in its directory:
 ```bash
-gh api "repos/embarkvetlabs/claude-configs/contents/skills/<name>" --jq '.[].name'
+gh api "repos/fartybobo/farty-bobo/contents/skills/<name>" --jq '.[].name'
 ```
 
 For each file in the skill directory, download it:
 ```bash
-gh api "repos/embarkvetlabs/claude-configs/contents/skills/<name>/<file>" \
+gh api "repos/fartybobo/farty-bobo/contents/skills/<name>/<file>" \
   --jq '.content' | base64 -d > ~/.claude/skills/<name>/<file>
 ```
 
@@ -89,7 +89,7 @@ ask the user: "~/.claude/skills/<name>/ already exists — overwrite, skip, or m
 
 For each selected hook, download the script:
 ```bash
-gh api "repos/embarkvetlabs/claude-configs/contents/hooks/<name>" \
+gh api "repos/fartybobo/farty-bobo/contents/hooks/<name>" \
   --jq '.content' | base64 -d > ~/.claude/hooks/<name>
 chmod +x ~/.claude/hooks/<name>
 ```
@@ -104,7 +104,7 @@ After downloading, go to Step 4 (hook registration) for each hook installed.
 
 For each selected command, download it:
 ```bash
-gh api "repos/embarkvetlabs/claude-configs/contents/commands/<name>" \
+gh api "repos/fartybobo/farty-bobo/contents/commands/<name>" \
   --jq '.content' | base64 -d > ~/.claude/commands/<name>
 chmod +x ~/.claude/commands/<name>
 ```
@@ -118,7 +118,7 @@ This step only applies if one or more hooks were installed.
 First, fetch the hook registration config from the source repo's `settings.json` to know
 exactly how each hook should be wired up (event type, matcher, command path):
 ```bash
-gh api "repos/embarkvetlabs/claude-configs/contents/settings.json" \
+gh api "repos/fartybobo/farty-bobo/contents/settings.json" \
   --jq '.content' | base64 -d
 ```
 

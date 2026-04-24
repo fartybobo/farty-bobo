@@ -87,6 +87,32 @@ Open Claude Desktop → Settings → Developer → MCP Servers.
 The new server should appear with a green status indicator.
 If it shows red/error, check Console.app for crash logs from the wrapper script.
 
+## Installing Skills Without Cloning This Repo
+
+The `plugins/farty-bobo/` directory contains a Claude Code plugin that lets anyone install skills, hooks, or commands from this repo à la carte — without forking or cloning the whole thing.
+
+### How to add the plugin
+
+Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project-scoped):
+
+```json
+{
+  "plugins": [
+    "github:fartybobo/farty-bobo/plugins/farty-bobo"
+  ]
+}
+```
+
+Then run `/farty-bobo:install`. The skill will:
+1. Fetch the live catalog of skills, hooks, and commands from this repo via `gh api`
+2. Present a menu — the user picks all or a named subset
+3. Download selected items to `~/.claude/skills/`, `~/.claude/hooks/`, `~/.claude/commands/`
+4. For hooks: ask whether to register in `~/.claude/settings.json` (global) or `.claude/settings.json` (current project)
+
+### Adding new skills to the plugin catalog
+
+Skills, hooks, and commands in this repo are automatically discoverable by the plugin — no manifest update needed. Just add the file to the right directory (`skills/`, `hooks/`, `commands/`) and it will appear in the install menu on the next run.
+
 ## Committing rules on this repo
 
 This is a solo project repo that does not require PRs or reviews from other humans or other agents. It is okay to merge to main.

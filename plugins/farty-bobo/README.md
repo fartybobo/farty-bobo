@@ -1,6 +1,6 @@
 # farty-bobo
 
-Selectively install skills, hooks, and commands from the [Farty Bobo config repo](https://github.com/embarkvetlabs/claude-configs) — without forking or cloning the whole thing.
+Selectively install skills, hooks, and commands from the [Farty Bobo config repo](https://github.com/fartybobo/farty-bobo) — without forking or cloning the whole thing.
 
 ## Installation
 
@@ -9,7 +9,7 @@ Add to your `~/.claude/settings.json` or any project-level `.claude/settings.jso
 ```json
 {
   "plugins": [
-    "github:embarkvetlabs/claude-configs/plugins/farty-bobo"
+    "github:fartybobo/farty-bobo/plugins/farty-bobo"
   ]
 }
 ```
