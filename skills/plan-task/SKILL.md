@@ -81,8 +81,6 @@ If the implementation plan involves cloud infrastructure, **or** if the repo con
 - `figma.com/board/...` URLs are FigJam boards — they cannot provide component or token data. Flag them to the human and exclude them from this step.
 - Non-Figma design sources (Zeplin, Sketch, screenshots) are **out of scope** — flag them to the human and skip this step.
 
-> **Model selection:** SKILL.md frontmatter supports a `model:` directive (e.g., `model: claude-opus-4-7`) that overrides the active model for the entire skill turn. We do not set one here — vision work is delegated to `/frontend-design`, which manages its own model selection. If `plan-task` ever needs to read visual artifacts directly (e.g., pasted wireframe images), add the directive to the frontmatter at that point.
-
 When triggered:
 
 1. **Extract and record Figma URLs** — parse all `figma.com/design/...` URLs from the task input. Record each URL in the plan file under a "Figma Sources" subsection before proceeding.
