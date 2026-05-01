@@ -18,10 +18,26 @@ Surface every open PR you authored that needs your attention — approved and wa
    gh api user --jq .login
    ```
    Do NOT assume a login from git config, memory, or any other source.
-3. Determine the scan scope based on how the skill was invoked:
-   - **Current repo** *(default when inside a git repo with a GitHub remote)*: scope to `{owner}/{repo}` resolved from `git remote get-url origin`.
-   - **Org/owner** *(if the human names one)*: scope to `--owner {name}`.
-   - **Everywhere** *(if invoked outside a git repo or human says "all my PRs")*: no scope restriction.
+3. **Prompt the human to choose the org scope.** Fetch the list of orgs the authenticated user belongs to:
+   ```sh
+   gh api user/orgs --jq '.[].login'
+   ```
+   Present the list to the human and ask them to pick one, or to type "all" to scan across all orgs with no restriction:
+
+   ```
+   Which org should I scan for your PRs?
+
+     1) embarkvet
+     2) acme-corp
+     3) all orgs (no restriction)
+
+   Enter a number or org name:
+   ```
+
+   Do NOT proceed until the human responds. Cache their choice as `{scope}`:
+   - If they pick a specific org: `{scope}` = `--owner {org}` for all `gh search prs` calls.
+   - If they say "all" or choose the "all orgs" option: `{scope}` = `` (no scope flag).
+   - If `gh api user/orgs` returns an empty list or an error, warn the human and default to asking them to type an org name manually or say "all".
 
 ---
 
@@ -37,8 +53,8 @@ gh search prs \
   --state=open \
   --review=approved \
   --json number,title,url,repository,createdAt,updatedAt,isDraft,labels \
-  --limit 100
-  # Add --repo OWNER/REPO or --owner OWNER to scope when applicable
+  --limit 100 \
+  {scope}   # --owner {org} or empty — set in Phase 1
 ```
 
 Exclude drafts (`isDraft: true`) unless the human explicitly asked to include them.
@@ -50,8 +66,8 @@ gh search prs \
   --author="@me" \
   --state=open \
   --json number,title,url,repository,createdAt,updatedAt,isDraft \
-  --limit 100
-  # Add scope flags as above
+  --limit 100 \
+  {scope}   # --owner {org} or empty — set in Phase 1
 ```
 
 For each PR returned, run the following in parallel (batch up to 10 at a time to avoid rate limits):
@@ -115,7 +131,7 @@ Write the triage board to:
 ```markdown
 # PR Action Board — {YYYY-MM-DD HH:MM:SS}
 
-Scoped to: {scope description}
+Scoped to: {org name, or "all orgs"}
 GitHub login: @{login}
 
 ---
