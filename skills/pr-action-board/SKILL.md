@@ -305,14 +305,36 @@ Each merge agent receives a self-contained prompt with:
       ```
       Poll every 60 seconds. If any run fails within the monitoring window, invoke `/resolve-ci-failures` on `{baseRefName}` of that repo. If CI has not reached a terminal state after 10 minutes, return `ci_outcome: timed_out` in the JSON result and note that the run was still in progress at timeout — do NOT invoke `/resolve-ci-failures` for a timed-out run; surface it to the human for manual follow-up instead.
 
-   d. Return a JSON result:
+   d. **Jira ticket transition (only after CI is green):** Once CI reaches a passing state — either originally passing, or passing after `/resolve-ci-failures` completes successfully — attempt to transition the associated Jira ticket to Done:
+
+      1. **Extract the ticket key** from the PR title and branch name using the pattern `[A-Z]+-\d+` (e.g. `BBH-1915`, `PROJ-42`). Check the PR title first, then `headRefName`. Use the first match found. If no ticket key is found, skip this step entirely and record `jira_transition: skipped_no_ticket` in the JSON result.
+
+      2. **Fetch available transitions:**
+         Use the Atlassian MCP `getTransitionsForJiraIssue` tool with the extracted ticket key.
+
+      3. **Select the target transition** using this priority order (case-insensitive substring match):
+         - "Done" → first choice
+         - "Merged" → second choice
+         - "Released" → third choice
+         - "Closed" → fourth choice
+         If none match, skip the transition and record `jira_transition: skipped_no_matching_state` with the available transition names listed in `notes`.
+
+      4. **Idempotency check:** Fetch the ticket's current status via `getJiraIssue`. If it is already in the matched target state or any downstream state (e.g. already "Done"), skip the transition and record `jira_transition: skipped_already_done`.
+
+      5. **Apply the transition** using `transitionJiraIssue`. If the MCP connector is unavailable or the API returns an error, record `jira_transition: failed` with the error in `notes` — do not retry, do not block the merge outcome report.
+
+      This step must be skipped entirely (record `jira_transition: skipped_ci_not_green`) if CI did not reach a passing state — i.e., if `ci_outcome` is `failing`, `timed_out`, or `skipped`.
+
+   e. Return a JSON result:
       ```json
       {
         "pr": 123,
         "repo": "owner/repo",
         "status": "merged | blocked | error",
         "merge_sha": "abc123",
-        "ci_outcome": "passing | failing | pending | skipped",
+        "ci_outcome": "passing | failing | timed_out | skipped",
+        "jira_ticket": "BBH-1915 | null",
+        "jira_transition": "done | skipped_no_ticket | skipped_no_matching_state | skipped_already_done | skipped_ci_not_green | failed",
         "notes": "any relevant detail"
       }
       ```
@@ -388,7 +410,8 @@ Phase 6 runs only after ALL agents — both MERGE and ADDRESS — have returned 
    **Status:** merged | addressed | skipped | blocked  
    **Completed:** {timestamp}  
    **Details:** {one-sentence summary — e.g. "Merged via squash. CI passed on main." or "3 comments addressed, 1 discussion replied to, PR pushed and critique passed."}  
-   **CI post-merge:** passing | failing (see /resolve-ci-failures output below) | n/a  
+   **CI post-merge:** passing | failing (see /resolve-ci-failures output below) | timed_out | n/a  
+   **Jira:** {ticket key} transitioned to Done | skipped ({reason}) | n/a  
    ```
 
 3. Update the Summary Table at the top — add an `Outcome` column with the final status per PR.
@@ -398,7 +421,8 @@ Phase 6 runs only after ALL agents — both MERGE and ADDRESS — have returned 
    ```
    PR Action Board — complete.
 
-   ✓  MERGE  [#123] embarkvet/foo — merged. CI passing.
+   ✓  MERGE  [#123] embarkvet/foo — merged. CI passing. BBH-1915 → Done.
+   ✓  MERGE  [#117] embarkvet/foo — merged. CI passing. No ticket found — Jira skipped.
    ✓  ADDRESS [#118] embarkvet/bar — 3 comments addressed, pushed, critique passed.
    —  SKIP   [#101] embarkvet/baz — skipped per your instruction.
    ✗  MERGE  [#109] embarkvet/qux — blocked: merge conflicts. Needs manual rebase.
