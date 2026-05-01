@@ -73,29 +73,57 @@ gh search prs \
 For each PR returned, run the following in parallel (batch up to 10 at a time to avoid rate limits):
 
 ```sh
-# Get all PR-level conversation comments
+# Get all PR-level conversation comments (issue-style — no resolution concept here)
 gh api repos/{owner}/{repo}/issues/{number}/comments \
   --jq '[.[] | {login: .user.login, created_at: .created_at, body: .body}] | sort_by(.created_at)'
-
-# Get all inline review thread comments
-gh api repos/{owner}/{repo}/pulls/{number}/comments \
-  --jq '[.[] | {login: .user.login, created_at: .created_at, body: .body, path: .path, line: .line}] | sort_by(.created_at)'
 
 # Get formal review states
 gh api repos/{owner}/{repo}/pulls/{number}/reviews \
   --jq '[.[] | {login: .user.login, state: .state, submitted_at: .submitted_at, body: .body}] | sort_by(.submitted_at)'
+
+# Get inline review threads WITH resolution status (GraphQL — REST does not expose isResolved)
+gh api graphql -f query='
+  query($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $number) {
+        reviewThreads(first: 100) {
+          nodes {
+            isResolved
+            isOutdated
+            comments(first: 20) {
+              nodes {
+                author { login }
+                createdAt
+                body
+                path
+                line
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+' -f owner="{owner}" -f repo="{repo}" -F number={number}
 ```
 
-**Identity anchor:** Use the cached `{gh_login}` from Phase 1 as the authoritative identity for all comment filtering. A comment or review is "from the human" if and only if its `user.login` equals `{gh_login}`. Do not infer identity from PR author, assignee, or any other field.
+**Identity anchor:** Use the cached `{gh_login}` from Phase 1 as the authoritative identity for all comment filtering. A comment or review is "from the human" if and only if its `author.login` (GraphQL) or `user.login` (REST) equals `{gh_login}`. Do not infer identity from PR author, assignee, or any other field.
 
-**Keep a PR in the "unresponded" list if ANY of the following is true:**
-- A reviewer left a comment or formal review AFTER the human's last comment/review on this PR AND the human has not replied since (compare `user.login` against `{gh_login}`).
+**Inline thread filtering rules — apply before counting or surfacing anything:**
+- **Exclude resolved threads** (`isResolved: true`). A resolved thread has been deliberately closed by a reviewer or the author — it is not actionable.
+- **Exclude outdated threads** (`isOutdated: true`). These reference code that no longer exists in the diff.
+- Only count and surface threads where `isResolved: false` AND `isOutdated: false`.
+
+**Keep a PR in the "unresponded" list if ANY of the following is true (after thread filtering above):**
+- A reviewer left a conversation comment (issue-style) AFTER the human's last comment on this PR AND the human has not replied since (compare `user.login` against `{gh_login}`).
 - A reviewer's formal review state is `CHANGES_REQUESTED` and there is no subsequent comment where `user.login == {gh_login}` acknowledging it.
-- A review thread has comments from reviewers where the last reply's `user.login` is NOT `{gh_login}`.
+- An unresolved, non-outdated inline review thread has comments from reviewers where the last reply's `author.login` is NOT `{gh_login}`.
 
 **Skip the PR (do not include it) if:**
-- The human's most recent activity on that PR (any comment/review where `user.login == {gh_login}`) is newer than all reviewer comments — they have already responded.
+- The human's most recent activity on that PR (any comment/review where login equals `{gh_login}`) is newer than all unresolved reviewer activity — they have already responded.
 - The only reviewer activity is a simple `APPROVED` with no comments or concerns.
+
+**Unresponded comment count** (the number shown in the triage table and PR detail section) **must only include unresolved, non-outdated threads and unacknowledged conversation comments.** Never count resolved or outdated threads toward this number.
 
 ### 2c. Enrich each PR
 
