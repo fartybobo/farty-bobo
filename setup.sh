@@ -22,6 +22,7 @@ done
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 CLAUDE_DESKTOP_DIR="$HOME/Library/Application Support/Claude"
+LOCAL_BIN="$HOME/.local/bin"
 
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -73,6 +74,17 @@ if compgen -G "$CLAUDE_DIR/scripts/*.sh" > /dev/null 2>&1; then
   ok "scripts/*.sh marked executable"
 fi
 
+# ── codex shim ───────────────────────────────────────────────────
+# Runs in both full and --links-only mode so the shim is always wired up.
+mkdir -p "$LOCAL_BIN"
+CODEX_SHIM="$REPO_DIR/claude-desktop/scripts/codex-shim.sh"
+if [[ -f "$CODEX_SHIM" ]]; then
+  ln -sf "$CODEX_SHIM" "$LOCAL_BIN/codex"
+  ok "codex shim symlinked to ~/.local/bin/codex"
+else
+  warn "codex-shim.sh not found — skipping codex symlink"
+fi
+
 # ── Claude Desktop config (macOS only) ──────────────────────────
 if [[ "$OSTYPE" == darwin* ]]; then
   mkdir -p "$CLAUDE_DESKTOP_DIR"
@@ -120,9 +132,6 @@ if ! $LINKS_ONLY; then
   NODE_VERSION_FILE="$REPO_DIR/.nvmrc"
   NODE_VERSION=$(cat "$NODE_VERSION_FILE" | tr -d '[:space:]')
   NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-  LOCAL_BIN="$HOME/.local/bin"
-
-  mkdir -p "$LOCAL_BIN"
 
   # Load nvm if available and install the pinned version
   if [[ -s "$NVM_DIR/nvm.sh" ]]; then
