@@ -1,5 +1,19 @@
 # AGENTS.md
 
+## Prerequisites: Codex
+
+The `codex:*` skills require `@openai/codex` to be installed globally under at least one nvm-managed node version. `setup.sh` creates a version-agnostic shim at `~/.local/bin/codex` that finds it automatically — but the package itself must be installed first:
+
+```sh
+npm install -g @openai/codex
+```
+
+Run `setup.sh` (or `setup.sh --links-only`) afterwards so the shim is wired up. Then authenticate:
+
+```sh
+codex login
+```
+
 ## How to Add a New MCP Server to Claude Desktop
 
 Follow these steps to add a new MCP server that requires environment variables.
