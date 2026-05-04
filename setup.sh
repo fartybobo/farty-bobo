@@ -85,6 +85,62 @@ else
   warn "codex-shim.sh not found — skipping codex symlink"
 fi
 
+# ── Codex skill symlinks ─────────────────────────────────────────
+# Codex loads skills from ~/.codex/skills/<name>/SKILL.md (uppercase).
+# Claude Code uses skill.md (lowercase). Create SKILL.md symlinks so both
+# tools share the same source files — no duplication, no drift.
+CODEX_SKILLS_DIR="$HOME/.codex/skills"
+if [[ -d "$CODEX_SKILLS_DIR" ]]; then
+  skill_count=0
+  for skill_dir in "$REPO_DIR/skills"/*/; do
+    [[ -d "$skill_dir" ]] || continue
+    skill_name="$(basename "${skill_dir%/}")"
+    src="$REPO_DIR/skills/$skill_name/skill.md"
+    dst_dir="$CODEX_SKILLS_DIR/$skill_name"
+    mkdir -p "$dst_dir"
+    ln -sf "$src" "$dst_dir/SKILL.md"
+    skill_count=$((skill_count + 1))
+  done
+  ok "$skill_count skills symlinked to ~/.codex/skills/"
+else
+  warn "~/.codex/skills not found — skipping Codex skill symlinks (install Codex first)"
+fi
+
+# ── Codex MCP servers ────────────────────────────────────────────
+# Register the MCP servers from claude_desktop_config.json into Codex.
+# Codex stores servers in ~/.codex/config.toml; command/args format is
+# identical to Claude Desktop's mcpServers — same wrapper scripts work.
+# Idempotent: skips servers that are already registered.
+DESKTOP_CONFIG="$REPO_DIR/claude-desktop/claude_desktop_config.json"
+CODEX_BIN="$LOCAL_BIN/codex"
+if [[ -x "$CODEX_BIN" ]] && [[ -f "$DESKTOP_CONFIG" ]]; then
+  python3 - "$DESKTOP_CONFIG" "$CODEX_BIN" <<'PYEOF'
+import json, re, subprocess, sys
+
+config_path, codex_bin = sys.argv[1], sys.argv[2]
+with open(config_path) as f:
+    servers = json.load(f).get("mcpServers", {})
+
+for name, cfg in servers.items():
+    # Codex only allows letters, numbers, '-', '_' in server names.
+    codex_name = re.sub(r"[^a-zA-Z0-9_-]", "-", name)
+    already = subprocess.run(
+        [codex_bin, "mcp", "get", codex_name], capture_output=True
+    ).returncode == 0
+    if already:
+        print(f"  (codex MCP) {codex_name}: already registered")
+        continue
+    cmd = [codex_bin, "mcp", "add", codex_name, "--"] + [cfg["command"]] + cfg.get("args", [])
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode == 0:
+        print(f"  (codex MCP) {codex_name}: registered")
+    else:
+        print(f"  ! (codex MCP) {codex_name}: failed — {r.stderr.strip()}", file=sys.stderr)
+PYEOF
+elif [[ ! -x "$CODEX_BIN" ]]; then
+  warn "codex not found at $CODEX_BIN — skipping MCP registration (run setup.sh again after installing Codex)"
+fi
+
 # ── Claude Desktop config (macOS only) ──────────────────────────
 if [[ "$OSTYPE" == darwin* ]]; then
   mkdir -p "$CLAUDE_DESKTOP_DIR"

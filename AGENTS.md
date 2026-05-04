@@ -14,6 +14,12 @@ Run `setup.sh` (or `setup.sh --links-only`) afterwards so the shim is wired up. 
 codex login
 ```
 
+`setup.sh` also automatically:
+- Symlinks every skill in `skills/` into `~/.codex/skills/<name>/SKILL.md` so Codex and Claude Code share the same skill files.
+- Registers all MCP servers from `claude_desktop_config.json` into Codex. Server names with dots are sanitized (e.g. `awslabs.redshift-mcp-server` → `awslabs-redshift-mcp-server`). Both steps are idempotent — safe to re-run.
+
+> **Note:** Skills that use Claude Code-specific APIs (`Agent`, `SendMessage`, `TaskCreate`) will load in Codex but those steps will silently no-op.
+
 ## How to Add a New MCP Server to Claude Desktop
 
 Follow these steps to add a new MCP server that requires environment variables.
