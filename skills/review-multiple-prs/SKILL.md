@@ -118,22 +118,15 @@ Each agent receives a self-contained prompt with:
    - Read the linked Jira ticket via the Atlassian MCP if a ticket key is found in the branch name or PR description
    - Read surrounding code for any renamed functions, changed contracts, or modified public APIs
 3. **For stacked PRs only:** the raw output of `gh pr diff <prior-number>` from the prior agent — passed verbatim, not summarized — so the agent understands what the prior layer changed and can attribute findings to the correct PR.
-4. **Draft PR behavior:** if `is_draft: true`, the agent must still review and produce findings, but must set `verdict: "COMMENT"` unconditionally. It should post inline comments on Github (authors expect feedback on drafts) but the summary must clearly label the PR as a draft.
+4. **Draft PR behavior:** if `is_draft: true`, the agent must still review and produce findings, but must set `verdict: "COMMENT"` unconditionally, and must **not** post anything to GitHub itself. All posting — draft or not — happens only in Step 6, after human approval of the draft file. The summary must clearly label the PR as a draft.
 5. The review dimensions to evaluate (see Step 3 below)
 6. The finding severity scale (see Step 4 below)
-7. Instructions to **return findings as structured JSON** (see Output Contract below)
+7. Instructions to **return findings as structured JSON** (see Output Contract below), plus this verbatim constraint: "Your final message must contain nothing but the JSON object — no prose, no markdown code fences, no preamble."
+8. The exact path `$TEMP_DIR/agent-output-pr-{number}.json` and an instruction to write its final JSON there as well as returning it as its final message.
 
-Run all agents in parallel (single message, multiple tool calls) **unless** the PRs are stacked — in that case, run them sequentially in merge order so each agent gets the prior layer's raw diff as context.
+Resolve and create `$TEMP_DIR` now — using the same commands as Step 5's Temp Directory resolution — rather than waiting until Step 5. Every agent below writes its output there as it completes, so results survive context compaction and don't depend on the orchestrator catching a completion notification at exactly the right moment.
 
-### Handling agent failures
-
-An agent's final message is its return value, and it must be **only** the raw JSON object described in the Output Contract below — no prose, no markdown code fences, no "Here's my review:" preamble. Tell every spawned agent this explicitly, in these words or equivalent: "Your final message must contain nothing but the JSON object. No other text."
-
-When an agent finishes, immediately parse its returned text as JSON before doing anything else with it. If parsing fails, or the agent returned an empty/truncated result, or a required field (`pr`, `verdict`, `findings`) is missing:
-
-1. **Do not fall back to reviewing the PR yourself.** Ever. That defeats the entire point of fanning out — a manual review from the orchestrator is not a substitute for the agent's structured, verifiable process, and silently doing so is a review failure, not a workaround.
-2. **Retry that one agent** with the same self-contained prompt, plus one line appended: "Your previous attempt did not return valid JSON — return ONLY the JSON object this time." Re-run it in the foreground so you can inspect the result the moment it lands.
-3. If the retry also fails to produce valid JSON, **stop and tell the user which PR's agent failed twice and why** (empty output, malformed JSON, missing fields — be specific). Ask whether to retry again, skip that PR, or investigate the agent failure directly. Do not proceed to Step 5 with a fabricated or self-authored substitute for that PR's findings.
+Run all agents in parallel (single message, multiple Agent tool calls; this uses the default `run_in_background: true`) **unless** the PRs are stacked — in that case, run them sequentially in merge order with `run_in_background: false`, so each agent's raw diff is available in hand before the next one is dispatched.
 
 ### Output Contract
 
@@ -180,6 +173,34 @@ Valid `severity` values for findings: `"BLOCKER"`, `"HIGH"`, `"MEDIUM"`, `"LOW"`
 **Line number constraint:** every finding with a `line` value must reference a line that actually appears in the diff output from `gh pr diff`. Do not invent or approximate line numbers — a line number not in the diff will cause the GitHub API to reject the comment with a 422 error.
 
 **How to verify a line is in the diff:** Parse the `@@` hunk headers from `gh pr diff --color=never`. Each header has the form `@@ -old_start,old_count +new_start,new_count @@`. For each hunk, maintain a running `new_line` counter initialized to `new_start`. For each subsequent line in the hunk: if it starts with ` ` (context) or `+` (added), add `(path, new_line)` to the valid set and increment `new_line`; if it starts with `-` (deleted), skip it without incrementing (it has no RIGHT-side line number); if it starts with `\` (the `\ No newline at end of file` sentinel), skip it without incrementing. Reset the counter when a new `@@` header is seen. Binary files produce no hunk lines and therefore an empty valid-line set for that path — any finding referencing a binary file path will be correctly demoted to the review body. A finding is only valid if its `(path, line)` pair appears in this set. If you cannot confirm a line is in the diff, omit the `line` field entirely — it will land in the review body instead of as an inline comment.
+
+### Handling agent failures
+
+Each agent both returns its JSON as its final message **and** writes the identical JSON to `$TEMP_DIR/agent-output-pr-{number}.json` (Step 2, item 8). That file is the durable source of truth for what an agent produced. Before drafting the review file in Step 5, confirm one valid output file exists for every PR under review. A completion notification with no corresponding file, or a file that fails validation below, is a failure — treat it exactly like a parse failure. Do not rely on catching a result out of conversation context: context gets compacted, and completion notifications for a parallel batch of background agents can arrive out of order, after other work has already started.
+
+**Validate every agent's JSON before using it** — presence of the object alone is not enough:
+- `pr` matches the PR number this agent was dispatched for (a mismatch means it reviewed the wrong PR or hallucinated the number)
+- `verdict` is exactly one of `APPROVE` / `REQUEST_CHANGES` / `COMMENT`
+- `findings` is an array (empty is fine)
+- for stacked PRs only: `stacked_context_diff` is present and non-empty
+- no finding has `severity: "IRRELEVANT"` — that value is human-only (see above); an agent assigning it is invalid output, not a suppression to honor silently
+
+**On any validation failure** (missing file, empty/truncated content, parse failure, or a check above failing):
+
+1. **Attempt salvage first.** Strip a leading/trailing code fence (` ```json ` / ` ``` `) or extract the outermost balanced `{...}` substring, then re-parse against the checks above. A stray fence around otherwise-valid JSON is the most likely deviation — don't burn a full re-review over a cosmetic wrapper.
+2. If salvage doesn't produce valid JSON, retry that one agent. Never fall back to reviewing the PR yourself — that isn't a substitute for the agent's structured process and defeats the point of fanning out. Retry with:
+   - The same self-contained prompt (for stacked PRs, including the forwarded prior-layer diff)
+   - One appended line: "Your previous attempt did not return valid JSON, or failed validation ({name the failed check}) — return ONLY the JSON object this time, and write it to {output file path}."
+   - A **new, unique** outlaw name (retries are new spawns; Step 2's uniqueness rule still applies)
+   - `run_in_background: false`, so the result is inspected the moment it lands
+   - If an agent has genuinely hung with no activity, apply the same bounded-wait-then-retry treatment rather than waiting indefinitely
+3. If the retry also fails validation, stop and tell the user which PR's agent failed twice and exactly why (empty output, parse failure, or the specific failed field).
+   - **Non-stacked PR:** offer to retry again, skip that PR, or investigate directly.
+   - **Stacked PR:** a failure halts the chain — every PR after this one depends on its `stacked_context_diff` and cannot be dispatched. "Skip that PR" is not valid here; offer only retry-again or investigate, and tell the user the downstream PRs in the stack are blocked until this one resolves.
+
+Do not proceed to Step 5 with a fabricated or self-authored substitute for any PR's findings.
+
+Because draft-PR agents never post to GitHub themselves (Step 2, item 4 — all posting happens in Step 6 after human approval), retrying a draft PR's agent carries no risk of duplicate GitHub comments.
 
 ## Step 3 — Review dimensions (per PR)
 
@@ -282,6 +303,8 @@ Populate the `prior_discussions` array in the Output Contract for every prior co
 Do not manufacture findings to look thorough. If the code is good, say so.
 
 ## Step 5 — Draft review file and get human approval
+
+Before doing anything else in this step, confirm one validated `$TEMP_DIR/agent-output-pr-{number}.json` file exists for every PR under review (per the "Handling agent failures" section above). If any is missing, stop and resolve it there first — do not draft from memory of a conversation result.
 
 Before posting anything to GitHub, write a draft markdown file and present it to the user for review and editing.
 
