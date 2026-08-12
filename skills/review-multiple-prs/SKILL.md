@@ -96,9 +96,13 @@ Use `gh` and the GitHub search API to find open PRs by the user's teammates that
 
 Before fanning out, check if `.review-suppressed.md` exists in the current working directory. If it does, read it and pass its contents to each agent so they can skip previously suppressed findings.
 
-**Resolve `$TEMP_DIR` here — this is its canonical resolution point for this skill.** Use the same commands shown in Step 5's Temp Directory section, then `mkdir -p -m 700 "$TEMP_DIR"`. Step 5 reuses this same directory; it does not re-resolve it. Immediately after creating it, run `rm -f "$TEMP_DIR"/agent-output-pr-*.json` — this is a repeat-invocation skill (Step 8 explicitly expects re-runs after new commits), and a stale output file left over from a prior pass would parse cleanly, pass every validation check below, and get silently drafted as if it were current. Deleting old output files before dispatching new agents is the only way to guarantee a file present at Step 5 was actually written by *this* run.
+**Resolve `$TEMP_DIR` here — this is its canonical resolution point for this skill.** Use the same commands shown in Step 5's Temp Directory section, then `mkdir -p -m 700 "$TEMP_DIR"`. Step 5 reuses this same directory; it does not re-resolve it.
 
-Resolve the **literal absolute path** for `$TEMP_DIR` in your own context (e.g. by echoing it) before building any agent prompt. A spawned agent has no access to your shell variables — if the prompt text contains `$TEMP_DIR` literally, the agent's own shell will expand it to empty and either fail to write or write to the wrong place. Every path handed to an agent below must already be the resolved absolute string.
+**Resolve a `RUN_ID` for this invocation:** `RUN_ID=$(date +%s)`. Every output file this run writes is namespaced `agent-output-pr-{number}-{RUN_ID}.json` — never the bare `agent-output-pr-{number}.json`. This namespacing, not deletion, is what keeps stale results from a previous pass (this is a repeat-invocation skill — Step 8 expects re-runs after new commits) from silently passing validation, and it means two people running this skill from the same branch at the same time never clobber each other's output files. Old files from finished runs are removed by the cleanup step at the end of "Handling agent failures" below, not by deleting on sight here.
+
+Resolve the **literal absolute path** for `$TEMP_DIR` (and compute `RUN_ID`) in your own context before building any agent prompt. A spawned agent has no access to your shell variables — if the prompt text contains `$TEMP_DIR` or `$RUN_ID` literally, the agent's own shell will expand them to empty and either fail to write or write to the wrong place. Every path handed to an agent below must already be the resolved absolute string with `RUN_ID` substituted in.
+
+**Maintain an explicit PR → validated-output-path mapping as agents complete**, starting empty and updated only by the "Handling agent failures" procedure below. Step 5 consumes this mapping directly — it never re-derives or guesses a filename, because a retried agent's validated file lives at a different path than the original (see below).
 
 Spin up one Agent per PR using `subagent_type: general-purpose`. Name each agent after a unique American outlaw from the 1800s–1900s (e.g. Jesse James, Belle Starr, Black Bart, Dutch Schultz, Pretty Boy Floyd, Billy the Kid, Bonnie Parker). Names must be unique per session — do not reuse a name even if reviewing many PRs.
 
@@ -121,11 +125,11 @@ Each agent receives a self-contained prompt with:
    - Check CI: `gh pr checks <number>` — note that this only shows current run state; to assess whether failures are pre-existing, also run `gh pr checks <base-branch>` or `gh pr checks $(gh pr view <number> --json baseRefName -q .baseRefName)` for comparison. If base-branch checks are also failing, mark `ci_failures_introduced_by_pr: false`.
    - Read the linked Jira ticket via the Atlassian MCP if a ticket key is found in the branch name or PR description
    - Read surrounding code for any renamed functions, changed contracts, or modified public APIs
-3. **For stacked PRs only:** fetch the prior layer's diff yourself — `gh pr diff <prior-number> > {TEMP_DIR}/diff-pr-<prior-number>.txt` — before dispatching this agent, and pass it the absolute path to that file plus an instruction to read it for context on what the prior layer changed. Do not have the agent embed the diff inside its own JSON output: asking an LLM to hand-escape a multi-thousand-line diff as a JSON string is one of the most likely ways to produce malformed output, and the orchestrator can fetch this diff itself in one command with zero risk of a bad escape.
+3. **For stacked PRs only:** fetch the prior layer's diff yourself — `gh pr diff <prior-number> > {TEMP_DIR}/diff-pr-<prior-number>-{RUN_ID}.txt` — before dispatching this agent, and pass it the absolute path to that file plus an instruction to read it for context on what the prior layer changed. Do not have the agent embed the diff inside its own JSON output: asking an LLM to hand-escape a multi-thousand-line diff as a JSON string is one of the most likely ways to produce malformed output, and the orchestrator can fetch this diff itself in one command with zero risk of a bad escape.
 4. **Draft PR behavior:** if `is_draft: true`, the agent must still review and produce findings, but must set `verdict: "COMMENT"` unconditionally, and must **not** post anything to GitHub itself. All posting — draft or not — happens only in Step 6, after human approval of the draft file. The summary must clearly label the PR as a draft.
 5. The review dimensions to evaluate (see Step 3 below)
 6. The finding severity scale (see Step 4 below)
-7. The **resolved absolute path** `{TEMP_DIR}/agent-output-pr-{number}.json` (not the literal string `$TEMP_DIR`) and an instruction to write its full structured JSON there (see Output Contract below).
+7. The **resolved absolute path** `{TEMP_DIR}/agent-output-pr-{number}-{RUN_ID}.json` (with `{TEMP_DIR}` and `{RUN_ID}` substituted for real values — never the literal strings `$TEMP_DIR` / `$RUN_ID`) and an instruction to write its full structured JSON there (see Output Contract below).
 8. This verbatim closing instruction: "Once you have written the JSON to that file, your final message must be only the file path you wrote, plus the word DONE — nothing else. Do not repeat the JSON in your final message; the file is the only place it needs to exist."
 
 Run all agents in parallel (single message, multiple Agent tool calls; this uses the default `run_in_background: true`) **unless** the PRs are stacked — in that case, run them sequentially in merge order with `run_in_background: false`, so each agent's prior-layer diff file (item 3 above) exists before the next one is dispatched.
@@ -179,33 +183,33 @@ Valid `severity` values for findings: `"BLOCKER"`, `"HIGH"`, `"MEDIUM"`, `"LOW"`
 
 ### Handling agent failures
 
-Each agent writes its full structured JSON to `{TEMP_DIR}/agent-output-pr-{number}.json` and returns only a path-plus-DONE confirmation as its final message (Step 2, items 7–8). The file is the sole durable source of truth — Step 5 reads it, not the conversation. Only evaluate an output file after that specific agent has reported completion (see the wait instruction at the end of Step 2); a missing file at that point, or a file that fails validation below, is a failure and must be handled exactly like a parse failure. Do not rely on catching a result out of conversation context: context gets compacted, and completion notifications for a parallel batch of background agents can arrive out of order.
+Each agent writes its full structured JSON to `{TEMP_DIR}/agent-output-pr-{number}-{RUN_ID}.json` and returns only a path-plus-DONE confirmation as its final message (Step 2, items 7–8). The file is the sole durable source of truth — Step 5 reads it, not the conversation. Only evaluate an output file after that specific agent has reported completion (see the wait instruction at the end of Step 2); a missing file at that point, or a file that fails validation below, is a failure and must be handled exactly like a parse failure. Do not rely on catching a result out of conversation context: context gets compacted, and completion notifications for a parallel batch of background agents can arrive out of order.
 
 **Validate every agent's output file before using it** — presence of a parseable object alone is not enough:
 - `pr` matches the PR number this agent was dispatched for, comparing numerically after stripping any non-digit characters (so `123`, `"123"`, and `"#123"` all match; a real mismatch means the agent reviewed the wrong PR or hallucinated the number)
 - `verdict` is exactly one of `APPROVE` / `REQUEST_CHANGES` / `COMMENT`
-- `title`, `summary`, `ci_status`, and `is_draft` are all present and non-empty (Step 5's draft file renders directly from these — a missing one forces the orchestrator to invent content, which is the exact failure this section exists to prevent)
+- `title` and `summary` are present and non-empty strings; `ci_status` is present and non-empty (Step 5's draft file renders directly from these — a missing one forces the orchestrator to invent content, which is the exact failure this section exists to prevent)
+- `is_draft` and `ci_failures_introduced_by_pr` are present and are booleans (`true`/`false`) — check type, not "non-empty"; `false` is a valid, common, and required value for both, and a non-empty check on a boolean will wrongly reject it
 - `findings` is an array (empty is fine); every element has at least `severity` (one of `BLOCKER`/`HIGH`/`MEDIUM`/`LOW`/`QUESTION`) and `body`
 - `prior_discussions` is an array and is present (per Step 3, an agent must populate this, even with zero entries — its absence is itself a review failure, not just a formatting one)
 - no finding, and no `prior_discussions` entry, has `severity`/`original_severity` of `"IRRELEVANT"` — that value is human-only (see above); an agent assigning it is invalid output, not a suppression to honor silently
 
 **On any validation failure** (missing file, empty/truncated content, parse failure, or a check above failing):
 
-1. **Attempt salvage first.** Strip a leading/trailing code fence (` ```json ` / ` ``` `) or extract the outermost balanced `{...}` substring from the file's contents, then re-validate against the checks above. A stray fence around otherwise-valid JSON is the most likely deviation — don't burn a full re-review over a cosmetic wrapper.
-2. If salvage doesn't produce valid output, retry that one agent. Never fall back to reviewing the PR yourself — that isn't a substitute for the agent's structured process and defeats the point of fanning out. Retry with:
+1. **Attempt salvage first.** Strip a leading/trailing code fence (` ```json ` / ` ``` `) or extract the outermost balanced `{...}` substring from the file's contents, then re-validate against the checks above. If salvage succeeds, **overwrite the output file with the salvaged, valid JSON** before continuing — Step 5 reads the file, not whatever you fixed only in your own context, so a repair that isn't written back is invisible downstream. A stray fence around otherwise-valid JSON is the most likely deviation — don't burn a full re-review over a cosmetic wrapper.
+2. If salvage doesn't produce valid output, retry that one agent **once**. Never fall back to reviewing the PR yourself — that isn't a substitute for the agent's structured process and defeats the point of fanning out. Retry with:
    - The same self-contained prompt (for stacked PRs, including the same prior-layer diff file path from Step 2 item 3 — do not re-fetch it)
-   - A **new output path**, `{TEMP_DIR}/agent-output-pr-{number}-retry1.json` (increment the suffix on further retries) — never reuse the original agent's path, so a slow-finishing original can never race a retry onto the same file
+   - A **new output path**, `{TEMP_DIR}/agent-output-pr-{number}-{RUN_ID}-retry1.json` — never reuse the original agent's path, so a slow-finishing original can never race a retry onto the same file
    - One appended line: "Your previous attempt failed validation ({name the failed check}) — write your full JSON to {new output path} this time, and return only that path plus DONE as your final message."
    - A **new, unique** outlaw name (retries are new spawns; Step 2's uniqueness rule still applies)
    - `run_in_background: false`, so the result is inspected the moment it lands
-   - If an agent has produced no output file and no visible tool activity for 10 minutes, treat it as hung and apply this same retry procedure rather than waiting indefinitely
-3. If the retry also fails validation, stop and tell the user which PR's agent failed twice and exactly why (empty output, parse failure, or the specific failed field).
-   - **Non-stacked PR:** offer to retry again, skip that PR, or investigate directly.
+   - **Update the PR → validated-output-path mapping (Step 2)** to point at this new path the moment it validates successfully — the original path is superseded, and nothing downstream should ever look for it again.
+   - **Detecting a hang, checkably:** record the wall-clock time at dispatch (`date +%s`). On any later turn where this agent still hasn't reported completion, run `date +%s` again and compare; once the difference exceeds 600 seconds, treat it as hung and apply this same one-time retry.
+3. If the retry also fails validation (or hangs by the same 600-second check), stop — do not retry a second time automatically — and tell the user which PR's agent failed twice and exactly why (empty output, parse failure, hang, or the specific failed field).
+   - **Non-stacked PR:** offer to retry again (a human-approved additional attempt, not automatic), skip that PR, or investigate directly.
    - **Stacked PR:** a failure halts the chain — every PR after this one depends on the prior layer's diff file and cannot be dispatched. "Skip that PR" is not valid here; offer only retry-again or investigate, and tell the user the downstream PRs in the stack are blocked until this one resolves.
 
 Do not proceed to Step 5 with a fabricated or self-authored substitute for any PR's findings.
-
-**Clean up before finishing this skill run:** once all reviews for this run have been posted (Step 6) or the run is abandoned, delete the `agent-output-pr-*.json` files for this run from `$TEMP_DIR` — they contain full findings and, for stacked PRs, prior-layer diffs, and have no other cleanup step. (They are also deleted unconditionally at the *start* of the next run's Step 2, so stale leftovers cannot outlive one invocation either way.)
 
 Because draft-PR agents never post to GitHub themselves (Step 2, item 4 — all posting happens in Step 6 after human approval), retrying a draft PR's agent carries no risk of duplicate GitHub comments.
 
@@ -313,7 +317,7 @@ Do not manufacture findings to look thorough. If the code is good, say so.
 
 Reuse the `$TEMP_DIR` already resolved and created in Step 2 — do not re-derive it here. (If this step is somehow entered without having run Step 2 in this session, resolve it now using the commands shown below, treating that as a recovery path rather than the normal one.)
 
-Before doing anything else in this step, confirm one validated `{TEMP_DIR}/agent-output-pr-{number}.json` file exists for every PR under review (per the "Handling agent failures" section above). If any is missing, stop and resolve it there first — do not draft from memory of a conversation result.
+Before doing anything else in this step, confirm the PR → validated-output-path mapping built during Step 2 (per "Handling agent failures" above) has one entry for every PR under review — read each PR's JSON from the path recorded in that mapping, not from a filename guessed here (a retried PR's validated file lives at a `-retry1` path, not the original). If any PR has no entry, stop and resolve it in Step 2 first — do not draft from memory of a conversation result.
 
 Before posting anything to GitHub, write a draft markdown file and present it to the user for review and editing.
 
@@ -492,4 +496,5 @@ After posting all reviews:
 - If multiple PRs were reviewed, call out any cross-PR integration concerns surfaced.
 - If CI failures were introduced by any PR, name the PR and suggest `/resolve-ci-failures`.
 - If any PRs have BLOCKERs or HIGHs, list the top concerns briefly.
+- **Clean up this run's agent output files:** delete every `agent-output-pr-*-{RUN_ID}.json` (including any `-retry1` variants) and `diff-pr-*-{RUN_ID}.txt` from `$TEMP_DIR` — this `RUN_ID` namespacing (Step 2) means it's always safe to delete everything matching this run's ID without touching another run's files. This is the one point every run passes through on the happy path. If the run is instead abandoned partway through (e.g. the user chose to stop after a repeated agent failure), run the same cleanup for this `RUN_ID` before ending the session's work on this review.
 - This skill covers one review pass. Re-invoke after the author pushes new commits.
