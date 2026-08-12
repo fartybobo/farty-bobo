@@ -80,7 +80,7 @@ Use `gh` and the GitHub search API to find open PRs by the user's teammates that
    Then ask: "Should I review all of these, or select a subset? I can also include the skipped PRs if you want to re-review them."
 
 7. Once the user confirms the set, continue with the normal Step 1 classification flow using those PRs.
-- For each PR, run `gh pr view <number> --json number,title,state,isDraft,baseRefName,headRefName,createdAt` to get metadata.
+- For each PR, run `gh pr view <number> --json number,title,state,isDraft,baseRefName,headRefName,createdAt,author` to get metadata. The `author` field (its `login`) is required by Step 5's draft template — fetch it here, once, rather than leaving it for an agent to improvise later.
 - Determine the relationship between the PRs:
 
   | Relationship | Definition | Review strategy |
@@ -96,11 +96,28 @@ Use `gh` and the GitHub search API to find open PRs by the user's teammates that
 
 Before fanning out, check if `.review-suppressed.md` exists in the current working directory. If it does, read it and pass its contents to each agent so they can skip previously suppressed findings.
 
+**Resolve `$TEMP_DIR` here — this is its canonical resolution point for this skill.** Use the same commands shown in Step 5's "Write the draft file" section, then `mkdir -p -m 700 "$TEMP_DIR"`. Step 5 reuses this same directory; it does not re-resolve it.
+
+**Resolve a `RUN_ID` for this invocation, exactly once, and persist it immediately:**
+
+```sh
+RUN_ID="$(date +%s)-$$"
+printf '%s' "$RUN_ID" > "$TEMP_DIR/current-run-id"
+```
+
+(the trailing `$$` — the shell's own PID — is required, not decorative: `date +%s` alone has one-second resolution, and two people starting this skill on the same branch in the same second would otherwise collide). The `current-run-id` file exists because `RUN_ID` is otherwise conversation-only state, exactly the kind of thing this whole fix exists to stop relying on — if context gets compacted between Step 2 and a later step, re-deriving `RUN_ID` from scratch (`date +%s` again) produces a *different* value that matches nothing already on disk. Whenever `RUN_ID` is needed and isn't already in hand, read it from `$TEMP_DIR/current-run-id` rather than recomputing it. Never overwrite this file or recompute `RUN_ID` more than once per invocation.
+
+Every output file this run writes is namespaced `agent-output-pr-{number}-{RUN_ID}.json` — never the bare `agent-output-pr-{number}.json`. This namespacing, not deletion, is what keeps stale results from a previous pass (this is a repeat-invocation skill — Step 8 expects re-runs after new commits) from silently passing validation, and it keeps two concurrent runs on the same branch from clobbering each other's output files. Old files from finished runs are removed by Step 8's cleanup step, not by deleting on sight here.
+
+Resolve the **literal absolute path** for `$TEMP_DIR` (and compute `RUN_ID`) in your own context before building any agent prompt. A spawned agent has no access to your shell variables — if the prompt text contains `$TEMP_DIR` or `$RUN_ID` literally, the agent's own shell will expand them to empty and either fail to write or write to the wrong place. Every path handed to an agent below must already be the resolved absolute string with `RUN_ID` substituted in.
+
+**Maintain the PR → validated-output-path mapping as a file, not only in conversation** — write `{TEMP_DIR}/run-manifest-{RUN_ID}.json` (a flat `{"123": "/abs/path/to/agent-output-pr-123-<RUN_ID>.json", ...}`). Every time an agent's output validates successfully (including after a retry supersedes an original — see "Handling agent failures" below), update it by **reading the current contents of the file, merging in the one new entry, and writing the whole object back** — never write a fresh object from memory of what you think it already contains; that silently drops every PR recorded in a turn you no longer have in context. The manifest, like the per-PR output files it points at, must survive context compaction — a mapping that exists only in conversation state reintroduces the exact problem this whole fix exists to solve, just one layer up. Step 5 reads this manifest rather than guessing filenames. If the manifest is ever missing when Step 5 needs it (e.g. compaction wiped the conversation and this file was somehow never written), first recover `RUN_ID` itself from `$TEMP_DIR/current-run-id` (do not recompute it — see above), then reconstruct the manifest by globbing `{TEMP_DIR}/agent-output-pr-*-{RUN_ID}*.json` and, for each PR number, preferring a `-retry1` match over the base path if both exist — do not re-dispatch agents whose valid output is already sitting on disk. Delete the manifest in Step 8's cleanup along with everything else.
+
 Spin up one Agent per PR using `subagent_type: general-purpose`. Name each agent after a unique American outlaw from the 1800s–1900s (e.g. Jesse James, Belle Starr, Black Bart, Dutch Schultz, Pretty Boy Floyd, Billy the Kid, Bonnie Parker). Names must be unique per session — do not reuse a name even if reviewing many PRs.
 
 Each agent receives a self-contained prompt with:
 
-1. The PR number, repo (`{owner}/{repo}`), and `is_draft` flag.
+1. The PR number, repo (`{owner}/{repo}`), `is_draft` flag, and `author` login (all from Step 1's metadata fetch) — with an instruction to copy `author` verbatim into its JSON output rather than re-fetching or guessing it.
 2. Instructions to:
    - Fetch the diff: `gh pr diff <number>` — save this output; it is the authoritative source of changed lines for inline comment line numbers
    - Read the PR metadata and conversation comments: `gh pr view <number> --comments`
@@ -117,13 +134,16 @@ Each agent receives a self-contained prompt with:
    - Check CI: `gh pr checks <number>` — note that this only shows current run state; to assess whether failures are pre-existing, also run `gh pr checks <base-branch>` or `gh pr checks $(gh pr view <number> --json baseRefName -q .baseRefName)` for comparison. If base-branch checks are also failing, mark `ci_failures_introduced_by_pr: false`.
    - Read the linked Jira ticket via the Atlassian MCP if a ticket key is found in the branch name or PR description
    - Read surrounding code for any renamed functions, changed contracts, or modified public APIs
-3. **For stacked PRs only:** the raw output of `gh pr diff <prior-number>` from the prior agent — passed verbatim, not summarized — so the agent understands what the prior layer changed and can attribute findings to the correct PR.
-4. **Draft PR behavior:** if `is_draft: true`, the agent must still review and produce findings, but must set `verdict: "COMMENT"` unconditionally. It should post inline comments on Github (authors expect feedback on drafts) but the summary must clearly label the PR as a draft.
+3. **For stacked PRs only:** fetch the prior layer's diff yourself — `gh pr diff <prior-number> > {TEMP_DIR}/diff-pr-<prior-number>-{RUN_ID}.txt` — before dispatching this agent, and pass it the absolute path to that file plus an instruction to read it for context on what the prior layer changed. Do not have the agent embed the diff inside its own JSON output: asking an LLM to hand-escape a multi-thousand-line diff as a JSON string is one of the most likely ways to produce malformed output, and the orchestrator can fetch this diff itself in one command with zero risk of a bad escape.
+4. **Draft PR behavior:** if `is_draft: true`, the agent must still review and produce findings, but must set `verdict: "COMMENT"` unconditionally, and must **not** post anything to GitHub itself. All posting — draft or not — happens only in Step 6, after human approval of the draft file. The summary must clearly label the PR as a draft.
 5. The review dimensions to evaluate (see Step 3 below)
 6. The finding severity scale (see Step 4 below)
-7. Instructions to **return findings as structured JSON** (see Output Contract below)
+7. The **resolved absolute path** `{TEMP_DIR}/agent-output-pr-{number}-{RUN_ID}.json` (with `{TEMP_DIR}` and `{RUN_ID}` substituted for real values — never the literal strings `$TEMP_DIR` / `$RUN_ID`) and an instruction to write its full structured JSON there (see Output Contract below).
+8. This verbatim closing instruction: "Once you have written the JSON to that file, your final message must be only the file path you wrote, plus the word DONE — nothing else. Do not repeat the JSON in your final message; the file is the only place it needs to exist."
 
-Run all agents in parallel (single message, multiple tool calls) **unless** the PRs are stacked — in that case, run them sequentially in merge order so each agent gets the prior layer's raw diff as context.
+Run all agents in parallel (single message, multiple Agent tool calls; this uses the default `run_in_background: true`) **unless** the PRs are stacked — in that case, run them sequentially in merge order with `run_in_background: false`, so each agent's prior-layer diff file (item 3 above) exists before the next one is dispatched.
+
+**Wait for every dispatched agent's completion notification before evaluating any output file.** A background Agent call returning is dispatch, not completion — see the HARD GUARD pattern this repo already uses in `/critique`. Do not treat "some agents have reported, others haven't" as license to start Step 5's file check or to retry an agent that simply hasn't finished yet; retrying a still-running agent races it onto the same output file and can produce a torn or overwritten write. Track every dispatched agent by name and confirm completion for all of them (or a hung-agent determination per "Handling agent failures" below) before moving on.
 
 ### Output Contract
 
@@ -133,11 +153,11 @@ Each agent must return a JSON object with exactly these fields:
 {
   "pr": 123,
   "title": "...",
+  "author": "github-login",
   "verdict": "APPROVE",
   "is_draft": false,
   "ci_status": "passing",
   "ci_failures_introduced_by_pr": false,
-  "stacked_context_diff": "<raw output of gh pr diff for this PR — included only for stacked PRs, to pass forward to the next agent>",
   "findings": [
     {
       "severity": "BLOCKER",
@@ -152,8 +172,8 @@ Each agent must return a JSON object with exactly these fields:
       "summary": "brief description of the prior comment or concern",
       "status": "accepted | unresolved | addressed_in_code",
       "original_severity": "BLOCKER | HIGH | MEDIUM | LOW | QUESTION",
-      "file": "path/to/file.ts (optional — only if the concern was about a specific file)",
-      "line": 42,
+      "file": "path/to/file.ts (optional — only if the concern was about a specific file; fold into `summary` if present, since Step 5's Prior Discussions table has no File column and never renders this on its own — same treatment as `line` below)",
+      "line": "42 (optional — fold into `summary` instead if omitted; Step 5's Prior Discussions table has no Line column, so this field is never rendered on its own)",
       "reasoning": "why this status was assigned — e.g. 'reviewer replied OK to defer' or 'no response from reviewer after author acknowledged'"
     }
   ],
@@ -170,6 +190,40 @@ Valid `severity` values for findings: `"BLOCKER"`, `"HIGH"`, `"MEDIUM"`, `"LOW"`
 **Line number constraint:** every finding with a `line` value must reference a line that actually appears in the diff output from `gh pr diff`. Do not invent or approximate line numbers — a line number not in the diff will cause the GitHub API to reject the comment with a 422 error.
 
 **How to verify a line is in the diff:** Parse the `@@` hunk headers from `gh pr diff --color=never`. Each header has the form `@@ -old_start,old_count +new_start,new_count @@`. For each hunk, maintain a running `new_line` counter initialized to `new_start`. For each subsequent line in the hunk: if it starts with ` ` (context) or `+` (added), add `(path, new_line)` to the valid set and increment `new_line`; if it starts with `-` (deleted), skip it without incrementing (it has no RIGHT-side line number); if it starts with `\` (the `\ No newline at end of file` sentinel), skip it without incrementing. Reset the counter when a new `@@` header is seen. Binary files produce no hunk lines and therefore an empty valid-line set for that path — any finding referencing a binary file path will be correctly demoted to the review body. A finding is only valid if its `(path, line)` pair appears in this set. If you cannot confirm a line is in the diff, omit the `line` field entirely — it will land in the review body instead of as an inline comment.
+
+### Handling agent failures
+
+Each agent writes its full structured JSON to `{TEMP_DIR}/agent-output-pr-{number}-{RUN_ID}.json` and returns only a path-plus-DONE confirmation as its final message (Step 2, items 7–8). The file is the sole durable source of truth — Step 5 reads it, not the conversation. Only evaluate an output file after that specific agent has reported completion (see the wait instruction at the end of Step 2); a missing file at that point, or a file that fails validation below, is a failure and must be handled exactly like a parse failure. Do not rely on catching a result out of conversation context: context gets compacted, and completion notifications for a parallel batch of background agents can arrive out of order.
+
+**Validate every agent's output file before using it** — presence of a parseable object alone is not enough:
+- `pr` matches the PR number this agent was dispatched for, comparing numerically after stripping any non-digit characters (so `123`, `"123"`, and `"#123"` all match; a real mismatch means the agent reviewed the wrong PR or hallucinated the number)
+- `verdict` is exactly one of `APPROVE` / `REQUEST_CHANGES` / `COMMENT`
+- `title`, `author`, and `summary` are present and non-empty strings; `ci_status` is exactly one of `passing` / `failing` / `pending` (Step 5's draft file renders directly from these fields — a missing or out-of-vocabulary one forces the orchestrator to invent content, which is the exact failure this section exists to prevent)
+- `is_draft` and `ci_failures_introduced_by_pr` are present and are booleans (`true`/`false`) — check type, not "non-empty"; `false` is a valid, common, and required value for both, and a non-empty check on a boolean will wrongly reject it
+- `findings` is an array (empty is fine); every element has at least `severity` (one of `BLOCKER`/`HIGH`/`MEDIUM`/`LOW`/`QUESTION`) and `body`
+- `prior_discussions` is an array and is present (per Step 3, an agent must populate this, even with zero entries — its absence is itself a review failure, not just a formatting one); every element has `author`, `summary`, `status` (one of `accepted`/`unresolved`/`addressed_in_code`), and `original_severity` (one of `BLOCKER`/`HIGH`/`MEDIUM`/`LOW`/`QUESTION`) — `status` and `original_severity` specifically gate the "absolute" verdict rule in Step 3, so a missing one would silently defeat it
+- no finding, and no `prior_discussions` entry, has `severity`/`original_severity` of `"IRRELEVANT"` — that value is human-only (see above); an agent assigning it is invalid output, not a suppression to honor silently
+
+**Detecting a hung original dispatch (parallel, background agents only):** record the wall-clock time at dispatch by appending a line to `$TEMP_DIR/dispatch-times-{RUN_ID}.txt` (`echo "{pr-number} $(date +%s)" >> ...`) rather than only noting it in conversation — the same compaction risk that motivated `current-run-id` applies here. On any later turn where a given agent still hasn't reported completion, run `date +%s` again and compare against that PR's recorded dispatch time; once the difference exceeds 600 seconds, treat it as hung and proceed to step 2 below. This clock-based check only applies to agents dispatched with `run_in_background: true` — it is meaningless for a stacked PR's sequential (foreground) original dispatch or for any retry (both always use `run_in_background: false`, item below): a foreground `Agent` call blocks the current turn until it returns, so there is no "later turn" on which to re-check the clock. For those, a failure to return is a harness-level condition outside this skill's control, not something this skill's clock check can detect — if a foreground call never returns, there is no later step to reach. Delete `dispatch-times-{RUN_ID}.txt` in Step 8's cleanup along with everything else.
+
+**On any validation failure** (missing file, empty/truncated content, parse failure, or a check above failing) — including on the hung-original determination above:
+
+1. **Check whether the automatic retry has already been spent for this PR.** If `{TEMP_DIR}/agent-output-pr-{number}-{RUN_ID}-retry1.json` already exists (or an agent is already dispatched to write it), the one automatic retry below has already happened — attempt salvage on that retry file (step 2 below) and, if that fails, go straight to step 4; do not dispatch a second automatic retry (do not re-enter step 3).
+2. **Attempt salvage first**, but only if a file exists to salvage — skip this step entirely for a missing/never-written file and go straight to the retry below. Strip a leading/trailing code fence (` ```json ` / ` ``` `) or extract the outermost balanced `{...}` substring from the file's contents, then re-validate against the checks above. If salvage succeeds, **overwrite the output file with the salvaged, valid JSON** before continuing — Step 5 reads the file, not whatever you fixed only in your own context, so a repair that isn't written back is invisible downstream. A stray fence around otherwise-valid JSON is the most likely deviation — don't burn a full re-review over a cosmetic wrapper.
+3. If salvage doesn't produce valid output (or wasn't applicable), retry that one agent — this is the one automatic retry step 1 checks for. Never fall back to reviewing the PR yourself — that isn't a substitute for the agent's structured process and defeats the point of fanning out. Retry with:
+   - The same self-contained prompt as the original dispatch, **except item 7's output path is replaced** with the new path below (do not leave the original path in the prompt alongside the new one — the agent must be told exactly one place to write, never two); for stacked PRs, keep the same prior-layer diff file path from Step 2 item 3 and do not re-fetch it
+   - The new output path: `{TEMP_DIR}/agent-output-pr-{number}-{RUN_ID}-retry1.json` — never reuse the original agent's path, so a slow-finishing original can never race a retry onto the same file
+   - One appended line: "Your previous attempt failed validation ({name the failed check}) — write your full JSON to {new output path} (not the path mentioned earlier in this prompt) and return only that path plus DONE as your final message."
+   - A **new, unique** outlaw name (retries are new spawns; Step 2's uniqueness rule still applies)
+   - `run_in_background: false`, so the result is inspected the moment it lands
+   - **Update the run manifest (Step 2)** to point this PR at the new path the moment it validates successfully — the original path is superseded, and nothing downstream should ever look for it again
+4. If the retry also fails validation, stop — per step 1, there is no second automatic retry — and tell the user which PR's agent failed twice and exactly why (empty output, parse failure, hang, or the specific failed field).
+   - **Non-stacked PR:** offer to retry again (a new, human-approved attempt — repeat this same procedure with a `-retry2` path if the human says yes), skip that PR, or investigate directly.
+   - **Stacked PR:** a failure halts the chain — every PR after this one depends on the prior layer's diff file and cannot be dispatched. "Skip that PR" is not valid here; offer only retry-again or investigate, and tell the user the downstream PRs in the stack are blocked until this one resolves.
+
+Do not proceed to Step 5 with a fabricated or self-authored substitute for any PR's findings.
+
+Because draft-PR agents never post to GitHub themselves (Step 2, item 4 — all posting happens in Step 6 after human approval), retrying a draft PR's agent carries no risk of duplicate GitHub comments.
 
 ## Step 3 — Review dimensions (per PR)
 
@@ -273,11 +327,15 @@ Do not manufacture findings to look thorough. If the code is good, say so.
 
 ## Step 5 — Draft review file and get human approval
 
+Reuse the `$TEMP_DIR` already resolved and created in Step 2 — do not re-derive it here. (If this step is somehow entered without having run Step 2 in this session, resolve it now using the commands shown below, treating that as a recovery path rather than the normal one.)
+
+Before doing anything else in this step: if `RUN_ID` isn't already in hand, read it from `$TEMP_DIR/current-run-id` — do not recompute it (see Step 2). Then read `{TEMP_DIR}/run-manifest-{RUN_ID}.json` (written and maintained during Step 2) and confirm it has one entry for every PR under review — read each PR's JSON from the path recorded there, not from a filename guessed here (a retried PR's validated file lives at a `-retry1` path, not the original). If the manifest is missing, reconstruct it per Step 2's recovery instruction rather than drafting from memory of a conversation result. If any PR still has no entry after that, stop and resolve it in Step 2 first.
+
 Before posting anything to GitHub, write a draft markdown file and present it to the user for review and editing.
 
 ### Write the draft file
 
-Resolve the temp directory before writing:
+For reference, `$TEMP_DIR` follows this shape:
 
 ```
 TEMP_DIR=/tmp/<repo-name>/<branch-name>
@@ -306,7 +364,7 @@ File format:
 
 ## {owner}/{repo}#{number} — {title}
 
-**Author:** {login} | **CI:** passing / failing / pending
+**Author:** {login} | **CI:** passing / failing / pending{, introduced by this PR: yes/no — only append this clause when CI is failing}
 
 **Review Event:** `APPROVE` / `REQUEST_CHANGES` / `COMMENT` ← _edit this to control the formal GitHub review event submitted for this PR_
 
@@ -320,13 +378,21 @@ File format:
 
 | Author | Summary | Status | Orig. Severity | Reasoning |
 |--------|---------|--------|---------------|-----------|
-| @reviewer-login | brief description of concern | accepted / unresolved / addressed_in_code | BLOCKER / HIGH / MEDIUM / LOW | why this status was assigned |
+| @reviewer-login | brief description of concern | accepted / unresolved / addressed_in_code | BLOCKER / HIGH / MEDIUM / LOW / QUESTION | why this status was assigned |
 
 #### Inline Comments
 
 | File | Line | Severity | Comment |
 |------|------|----------|---------|
 | `path/to/file.ts` | 42 | BLOCKER | {your identity} says: ... |
+
+#### Body Comments (no confirmed diff line — will post to the review body, not inline)
+
+| File | Severity | Comment |
+|------|----------|---------|
+| `path/to/file.ts` | MEDIUM | {your identity} says: ... |
+
+Only present this subsection if at least one finding omitted `line` per the Output Contract's line-number constraint. Do not force a line-less finding into the Inline Comments table with a blank Line cell.
 
 ---
 
@@ -363,15 +429,17 @@ After human approval, re-read the draft file. For each PR:
 
 1. **Parse the `Review Event` field** from the draft file header. Valid values: `APPROVE`, `REQUEST_CHANGES`, `COMMENT`. The human may have changed this from the agent's original recommendation — **always use the value in the file, not the agent's original verdict.**
 
-2. **Collect IRRELEVANT findings before posting.** Scan the draft file for any inline comment rows whose severity is `IRRELEVANT`. For each one:
+2. **Collect IRRELEVANT findings before posting.** Scan the draft file for any row — in the Inline Comments table, the Body Comments table, or the Prior Discussions table — whose severity (or `Orig. Severity` for Prior Discussions) is `IRRELEVANT`. For each one:
    - Skip it — do not post it to GitHub.
-   - Append a record to `.review-suppressed.md` (create if absent) in this format:
+   - Append a record to `.review-suppressed.md` (create if absent) in this format: for a Body Comments row, use `-` for `{line}` (it has no line number, but does have `{file}`); for a Prior Discussions row, use `-` for **both** `{file}` and `{line}` — that table has neither column, and any file/line context that existed is already folded into its Summary text, not separately available to quote here:
      ```
      {owner}/{repo}#{pr} | {file}:{line} | {comment summary} | suppressed {YYYY-MM-DD}
      ```
    This file is the persistence layer — future passes read it in Step 2 to avoid re-raising the same findings.
 
-3. **Pre-validate line numbers before posting.** For each PR that has inline comments, fetch its diff and build the valid RIGHT-side line set. Apply the algorithm from the Output Contract's "How to verify a line is in the diff" section. The pseudocode below illustrates the logic — apply it when constructing the API payload, not as runnable code:
+3. **Assemble the review body from the Body Comments table.** Every row in Step 5's "Body Comments" subsection **that isn't marked `IRRELEVANT`** (findings the agent deliberately left without a `line` because it couldn't confirm one against the diff) must end up in the posted review body — never dropped, but an `IRRELEVANT` row from item 2 is still skipped here, not posted. Start building a `### Additional Comments` section from these rows now, as bullets in the form `- **{file}** — {comment body}` — this table has no `line` column by construction, so do not invent one. Item 4 below adds more bullets to this same section, in the *different* form `- **{file}:{line}** — {comment body}` (those rows do have a confirmed line), for any inline comment that fails line validation; the merged result is used when posting in items 5–6.
+
+4. **Pre-validate line numbers before posting.** For each PR that has inline comments, fetch its diff and build the valid RIGHT-side line set. Apply the algorithm from the Output Contract's "How to verify a line is in the diff" section. The pseudocode below illustrates the logic — apply it when constructing the API payload, not as runnable code:
 
    ```python
    # PSEUDOCODE — apply this logic mentally when building the payload
@@ -397,18 +465,18 @@ After human approval, re-read the draft file. For each PR:
 
    For each proposed inline comment, check if `(path, line)` is in the valid set:
    - **In the set** → include as an inline comment.
-   - **Not in the set** → demote to the review body. Append a `### Comments that could not be posted inline` section (create it if it doesn't exist) and add a bullet:
+   - **Not in the set** → demote to the review body. Add it to the same `### Additional Comments` section started in item 3, as a bullet:
      ```
      - **{file}:{line}** — {comment body}
      ```
-   This eliminates 422 rejections entirely — no silent losses.
+   This eliminates 422 rejections entirely — no silent losses, and folds in with the Body Comments rows from item 3 so both land in one place.
 
-4. **Post inline comments with the review event** using `gh api`. Use `side: "RIGHT"` for all inline comments. Only post comments for lines confirmed in step 3. Use the content from the approved draft file — not the raw agent output. Skip any finding marked `IRRELEVANT`.
+5. **Post inline comments with the review event** using `gh api`. Use `side: "RIGHT"` for all inline comments. Only post comments for lines confirmed in step 4. Use the content from the approved draft file — not the raw agent output. Skip any finding marked `IRRELEVANT`. Set `body` per the rule in item 6 below (GitHub rejects a `COMMENT`-event review with an empty body, so this applies here too, not only to the no-inline-comments case).
 
 ```
 gh api repos/{owner}/{repo}/pulls/{number}/reviews \
   --method POST \
-  --field body="" \
+  --field body="{body per item 6's rule}" \
   --field event="{REVIEW_EVENT}" \
   --field "comments[][path]=path/to/file.ts" \
   --field "comments[][line]=42" \
@@ -418,14 +486,16 @@ gh api repos/{owner}/{repo}/pulls/{number}/reviews \
 
 Where `{REVIEW_EVENT}` is the value read from the draft file's `Review Event` field for that PR (`APPROVE`, `REQUEST_CHANGES`, or `COMMENT`).
 
-5. **If a PR has no inline comments** (or all were demoted to body text) and the review event is `APPROVE` or `REQUEST_CHANGES`, submit the review without comments:
+6. **Every PR gets a posted review, regardless of event or whether it has inline comments** — there is no case where nothing gets submitted. If there are no inline comments (all findings had a confirmed line, and `### Additional Comments` is empty), submit the review without inline comments:
 
 ```
 gh api repos/{owner}/{repo}/pulls/{number}/reviews \
   --method POST \
-  --field body="Reviewed by {your identity}" \
+  --field body="{body per the rule below}" \
   --field event="{REVIEW_EVENT}"
 ```
+
+**Body rule (applies to both items 5 and 6):** if `### Additional Comments` has any bullets, use it as the body. If it's empty, use `"Reviewed by {your identity}"` — never post an empty `body`; GitHub rejects `event=COMMENT` with a blank body, and a clean draft PR (Step 2 item 4 forces `verdict: "COMMENT"` unconditionally, per Step 7) is exactly the case most likely to have zero inline comments and an empty `### Additional Comments` section, so this isn't an edge case to skip.
 
 Post reviews for all PRs.
 
@@ -434,7 +504,7 @@ Post reviews for all PRs.
 The agent populates the `Review Event` field in the draft file as its **initial recommendation**. The human can override it before posting. These are the rules for the agent's initial recommendation:
 
 - `APPROVE` — no BLOCKERs or HIGHs (including unresolved prior concerns with original severity BLOCKER or HIGH), CI passing (or failures pre-existing on base)
-- `REQUEST_CHANGES` — one or more BLOCKERs or HIGHs introduced by this PR, OR one or more unresolved prior concerns with original severity BLOCKER or HIGH
+- `REQUEST_CHANGES` — one or more BLOCKERs or HIGHs introduced by this PR, OR one or more unresolved prior concerns with original severity BLOCKER or HIGH (subject to Step 3's stale-concern downgrade carve-out for HIGHs — a HIGH demonstrably stale and documented as such in `reasoning` does not by itself force this event)
 - `COMMENT` — draft PR (overrides all other events — see below), questions only, or observations with no blocking concerns
 
 **Draft PR precedence:** if `is_draft: true`, the review event is always `COMMENT` regardless of unresolved prior concerns. Prior discussions are still analyzed and surfaced in the output — the draft status overrides the event, not the analysis.
@@ -450,4 +520,5 @@ After posting all reviews:
 - If multiple PRs were reviewed, call out any cross-PR integration concerns surfaced.
 - If CI failures were introduced by any PR, name the PR and suggest `/resolve-ci-failures`.
 - If any PRs have BLOCKERs or HIGHs, list the top concerns briefly.
+- **Clean up this run's agent output files:** delete every `agent-output-pr-*-{RUN_ID}*.json` (the `*` after `{RUN_ID}` is required — it is what matches `-retry1`, `-retry2`, etc.), `run-manifest-{RUN_ID}.json`, `dispatch-times-{RUN_ID}.txt`, `diff-pr-*-{RUN_ID}.txt`, and finally `current-run-id` from `$TEMP_DIR` — this `RUN_ID` namespacing (Step 2) means it's always safe to delete everything matching this run's ID without touching another run's files. This is the one point every run passes through on the happy path. If the run is instead abandoned partway through (e.g. the user chose to stop after a repeated agent failure), run the same cleanup for this `RUN_ID` before ending the session's work on this review.
 - This skill covers one review pass. Re-invoke after the author pushes new commits.
