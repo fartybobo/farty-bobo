@@ -172,7 +172,7 @@ Each agent must return a JSON object with exactly these fields:
       "summary": "brief description of the prior comment or concern",
       "status": "accepted | unresolved | addressed_in_code",
       "original_severity": "BLOCKER | HIGH | MEDIUM | LOW | QUESTION",
-      "file": "path/to/file.ts (optional — only if the concern was about a specific file)",
+      "file": "path/to/file.ts (optional — only if the concern was about a specific file; fold into `summary` if present, since Step 5's Prior Discussions table has no File column and never renders this on its own — same treatment as `line` below)",
       "line": "42 (optional — fold into `summary` instead if omitted; Step 5's Prior Discussions table has no Line column, so this field is never rendered on its own)",
       "reasoning": "why this status was assigned — e.g. 'reviewer replied OK to defer' or 'no response from reviewer after author acknowledged'"
     }
@@ -198,7 +198,7 @@ Each agent writes its full structured JSON to `{TEMP_DIR}/agent-output-pr-{numbe
 **Validate every agent's output file before using it** — presence of a parseable object alone is not enough:
 - `pr` matches the PR number this agent was dispatched for, comparing numerically after stripping any non-digit characters (so `123`, `"123"`, and `"#123"` all match; a real mismatch means the agent reviewed the wrong PR or hallucinated the number)
 - `verdict` is exactly one of `APPROVE` / `REQUEST_CHANGES` / `COMMENT`
-- `title`, `author`, and `summary` are present and non-empty strings; `ci_status` is present and non-empty (Step 5's draft file renders directly from these — a missing one forces the orchestrator to invent content, which is the exact failure this section exists to prevent)
+- `title`, `author`, and `summary` are present and non-empty strings; `ci_status` is exactly one of `passing` / `failing` / `pending` (Step 5's draft file renders directly from these fields — a missing or out-of-vocabulary one forces the orchestrator to invent content, which is the exact failure this section exists to prevent)
 - `is_draft` and `ci_failures_introduced_by_pr` are present and are booleans (`true`/`false`) — check type, not "non-empty"; `false` is a valid, common, and required value for both, and a non-empty check on a boolean will wrongly reject it
 - `findings` is an array (empty is fine); every element has at least `severity` (one of `BLOCKER`/`HIGH`/`MEDIUM`/`LOW`/`QUESTION`) and `body`
 - `prior_discussions` is an array and is present (per Step 3, an agent must populate this, even with zero entries — its absence is itself a review failure, not just a formatting one); every element has `author`, `summary`, `status` (one of `accepted`/`unresolved`/`addressed_in_code`), and `original_severity` (one of `BLOCKER`/`HIGH`/`MEDIUM`/`LOW`/`QUESTION`) — `status` and `original_severity` specifically gate the "absolute" verdict rule in Step 3, so a missing one would silently defeat it
@@ -378,7 +378,7 @@ File format:
 
 | Author | Summary | Status | Orig. Severity | Reasoning |
 |--------|---------|--------|---------------|-----------|
-| @reviewer-login | brief description of concern | accepted / unresolved / addressed_in_code | BLOCKER / HIGH / MEDIUM / LOW | why this status was assigned |
+| @reviewer-login | brief description of concern | accepted / unresolved / addressed_in_code | BLOCKER / HIGH / MEDIUM / LOW / QUESTION | why this status was assigned |
 
 #### Inline Comments
 
@@ -431,13 +431,13 @@ After human approval, re-read the draft file. For each PR:
 
 2. **Collect IRRELEVANT findings before posting.** Scan the draft file for any row — in the Inline Comments table, the Body Comments table, or the Prior Discussions table — whose severity (or `Orig. Severity` for Prior Discussions) is `IRRELEVANT`. For each one:
    - Skip it — do not post it to GitHub.
-   - Append a record to `.review-suppressed.md` (create if absent) in this format, using `-` for `{line}` when the row is from the Body Comments or Prior Discussions table (neither carries a line number):
+   - Append a record to `.review-suppressed.md` (create if absent) in this format: for a Body Comments row, use `-` for `{line}` (it has no line number, but does have `{file}`); for a Prior Discussions row, use `-` for **both** `{file}` and `{line}` — that table has neither column, and any file/line context that existed is already folded into its Summary text, not separately available to quote here:
      ```
      {owner}/{repo}#{pr} | {file}:{line} | {comment summary} | suppressed {YYYY-MM-DD}
      ```
    This file is the persistence layer — future passes read it in Step 2 to avoid re-raising the same findings.
 
-3. **Assemble the review body from the Body Comments table.** Every row in Step 5's "Body Comments" subsection (findings the agent deliberately left without a `line` because it couldn't confirm one against the diff) must end up in the posted review body — never dropped. Start building a `### Additional Comments` section from these rows now, as bullets in the form `- **{file}:{line}** — {comment body}`; item 4 below adds more bullets to this same section for any inline comment that fails line validation, and the merged result is used when posting in items 5–6.
+3. **Assemble the review body from the Body Comments table.** Every row in Step 5's "Body Comments" subsection **that isn't marked `IRRELEVANT`** (findings the agent deliberately left without a `line` because it couldn't confirm one against the diff) must end up in the posted review body — never dropped, but an `IRRELEVANT` row from item 2 is still skipped here, not posted. Start building a `### Additional Comments` section from these rows now, as bullets in the form `- **{file}** — {comment body}` — this table has no `line` column by construction, so do not invent one. Item 4 below adds more bullets to this same section, in the *different* form `- **{file}:{line}** — {comment body}` (those rows do have a confirmed line), for any inline comment that fails line validation; the merged result is used when posting in items 5–6.
 
 4. **Pre-validate line numbers before posting.** For each PR that has inline comments, fetch its diff and build the valid RIGHT-side line set. Apply the algorithm from the Output Contract's "How to verify a line is in the diff" section. The pseudocode below illustrates the logic — apply it when constructing the API payload, not as runnable code:
 
@@ -471,12 +471,12 @@ After human approval, re-read the draft file. For each PR:
      ```
    This eliminates 422 rejections entirely — no silent losses, and folds in with the Body Comments rows from item 3 so both land in one place.
 
-5. **Post inline comments with the review event** using `gh api`. Use `side: "RIGHT"` for all inline comments. Only post comments for lines confirmed in step 4. Use the content from the approved draft file — not the raw agent output. Skip any finding marked `IRRELEVANT`. Set `body` to the `### Additional Comments` section assembled in items 3–4 (empty string if it has no bullets).
+5. **Post inline comments with the review event** using `gh api`. Use `side: "RIGHT"` for all inline comments. Only post comments for lines confirmed in step 4. Use the content from the approved draft file — not the raw agent output. Skip any finding marked `IRRELEVANT`. Set `body` per the rule in item 6 below (GitHub rejects a `COMMENT`-event review with an empty body, so this applies here too, not only to the no-inline-comments case).
 
 ```
 gh api repos/{owner}/{repo}/pulls/{number}/reviews \
   --method POST \
-  --field body="{assembled ### Additional Comments section, or empty string}" \
+  --field body="{body per item 6's rule}" \
   --field event="{REVIEW_EVENT}" \
   --field "comments[][path]=path/to/file.ts" \
   --field "comments[][line]=42" \
@@ -486,14 +486,16 @@ gh api repos/{owner}/{repo}/pulls/{number}/reviews \
 
 Where `{REVIEW_EVENT}` is the value read from the draft file's `Review Event` field for that PR (`APPROVE`, `REQUEST_CHANGES`, or `COMMENT`).
 
-6. **If a PR has no inline comments** (all findings had a confirmed line, and there's nothing in `### Additional Comments`) and the review event is `APPROVE` or `REQUEST_CHANGES`, submit the review without inline comments, but still include the assembled body if it's non-empty:
+6. **Every PR gets a posted review, regardless of event or whether it has inline comments** — there is no case where nothing gets submitted. If there are no inline comments (all findings had a confirmed line, and `### Additional Comments` is empty), submit the review without inline comments:
 
 ```
 gh api repos/{owner}/{repo}/pulls/{number}/reviews \
   --method POST \
-  --field body="Reviewed by {your identity}{, plus the assembled ### Additional Comments section if non-empty}" \
+  --field body="{body per the rule below}" \
   --field event="{REVIEW_EVENT}"
 ```
+
+**Body rule (applies to both items 5 and 6):** if `### Additional Comments` has any bullets, use it as the body. If it's empty, use `"Reviewed by {your identity}"` — never post an empty `body`; GitHub rejects `event=COMMENT` with a blank body, and a clean draft PR (Step 2 item 4 forces `verdict: "COMMENT"` unconditionally, per Step 7) is exactly the case most likely to have zero inline comments and an empty `### Additional Comments` section, so this isn't an edge case to skip.
 
 Post reviews for all PRs.
 
@@ -502,7 +504,7 @@ Post reviews for all PRs.
 The agent populates the `Review Event` field in the draft file as its **initial recommendation**. The human can override it before posting. These are the rules for the agent's initial recommendation:
 
 - `APPROVE` — no BLOCKERs or HIGHs (including unresolved prior concerns with original severity BLOCKER or HIGH), CI passing (or failures pre-existing on base)
-- `REQUEST_CHANGES` — one or more BLOCKERs or HIGHs introduced by this PR, OR one or more unresolved prior concerns with original severity BLOCKER or HIGH
+- `REQUEST_CHANGES` — one or more BLOCKERs or HIGHs introduced by this PR, OR one or more unresolved prior concerns with original severity BLOCKER or HIGH (subject to Step 3's stale-concern downgrade carve-out for HIGHs — a HIGH demonstrably stale and documented as such in `reasoning` does not by itself force this event)
 - `COMMENT` — draft PR (overrides all other events — see below), questions only, or observations with no blocking concerns
 
 **Draft PR precedence:** if `is_draft: true`, the review event is always `COMMENT` regardless of unresolved prior concerns. Prior discussions are still analyzed and surfaced in the output — the draft status overrides the event, not the analysis.
