@@ -125,6 +125,16 @@ Each agent receives a self-contained prompt with:
 
 Run all agents in parallel (single message, multiple tool calls) **unless** the PRs are stacked — in that case, run them sequentially in merge order so each agent gets the prior layer's raw diff as context.
 
+### Handling agent failures
+
+An agent's final message is its return value, and it must be **only** the raw JSON object described in the Output Contract below — no prose, no markdown code fences, no "Here's my review:" preamble. Tell every spawned agent this explicitly, in these words or equivalent: "Your final message must contain nothing but the JSON object. No other text."
+
+When an agent finishes, immediately parse its returned text as JSON before doing anything else with it. If parsing fails, or the agent returned an empty/truncated result, or a required field (`pr`, `verdict`, `findings`) is missing:
+
+1. **Do not fall back to reviewing the PR yourself.** Ever. That defeats the entire point of fanning out — a manual review from the orchestrator is not a substitute for the agent's structured, verifiable process, and silently doing so is a review failure, not a workaround.
+2. **Retry that one agent** with the same self-contained prompt, plus one line appended: "Your previous attempt did not return valid JSON — return ONLY the JSON object this time." Re-run it in the foreground so you can inspect the result the moment it lands.
+3. If the retry also fails to produce valid JSON, **stop and tell the user which PR's agent failed twice and why** (empty output, malformed JSON, missing fields — be specific). Ask whether to retry again, skip that PR, or investigate the agent failure directly. Do not proceed to Step 5 with a fabricated or self-authored substitute for that PR's findings.
+
 ### Output Contract
 
 Each agent must return a JSON object with exactly these fields:
