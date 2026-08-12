@@ -98,11 +98,20 @@ Before fanning out, check if `.review-suppressed.md` exists in the current worki
 
 **Resolve `$TEMP_DIR` here — this is its canonical resolution point for this skill.** Use the same commands shown in Step 5's "Write the draft file" section, then `mkdir -p -m 700 "$TEMP_DIR"`. Step 5 reuses this same directory; it does not re-resolve it.
 
-**Resolve a `RUN_ID` for this invocation:** `RUN_ID=$(date +%s)-$$` (the trailing `$$` — the shell's own PID — is required, not decorative: `date +%s` alone has one-second resolution, and two people starting this skill on the same branch in the same second would otherwise collide). Every output file this run writes is namespaced `agent-output-pr-{number}-{RUN_ID}.json` — never the bare `agent-output-pr-{number}.json`. This namespacing, not deletion, is what keeps stale results from a previous pass (this is a repeat-invocation skill — Step 8 expects re-runs after new commits) from silently passing validation, and it keeps two concurrent runs on the same branch from clobbering each other's output files. Old files from finished runs are removed by Step 8's cleanup step, not by deleting on sight here.
+**Resolve a `RUN_ID` for this invocation, exactly once, and persist it immediately:**
+
+```sh
+RUN_ID="$(date +%s)-$$"
+printf '%s' "$RUN_ID" > "$TEMP_DIR/current-run-id"
+```
+
+(the trailing `$$` — the shell's own PID — is required, not decorative: `date +%s` alone has one-second resolution, and two people starting this skill on the same branch in the same second would otherwise collide). The `current-run-id` file exists because `RUN_ID` is otherwise conversation-only state, exactly the kind of thing this whole fix exists to stop relying on — if context gets compacted between Step 2 and a later step, re-deriving `RUN_ID` from scratch (`date +%s` again) produces a *different* value that matches nothing already on disk. Whenever `RUN_ID` is needed and isn't already in hand, read it from `$TEMP_DIR/current-run-id` rather than recomputing it. Never overwrite this file or recompute `RUN_ID` more than once per invocation.
+
+Every output file this run writes is namespaced `agent-output-pr-{number}-{RUN_ID}.json` — never the bare `agent-output-pr-{number}.json`. This namespacing, not deletion, is what keeps stale results from a previous pass (this is a repeat-invocation skill — Step 8 expects re-runs after new commits) from silently passing validation, and it keeps two concurrent runs on the same branch from clobbering each other's output files. Old files from finished runs are removed by Step 8's cleanup step, not by deleting on sight here.
 
 Resolve the **literal absolute path** for `$TEMP_DIR` (and compute `RUN_ID`) in your own context before building any agent prompt. A spawned agent has no access to your shell variables — if the prompt text contains `$TEMP_DIR` or `$RUN_ID` literally, the agent's own shell will expand them to empty and either fail to write or write to the wrong place. Every path handed to an agent below must already be the resolved absolute string with `RUN_ID` substituted in.
 
-**Maintain the PR → validated-output-path mapping as a file, not only in conversation** — write `{TEMP_DIR}/run-manifest-{RUN_ID}.json` (a flat `{"123": "/abs/path/to/agent-output-pr-123-<RUN_ID>.json", ...}`) and update it every time an agent's output validates successfully, including after a retry supersedes an original (see "Handling agent failures" below). The manifest, like the per-PR output files it points at, must survive context compaction — a mapping that exists only in conversation state reintroduces the exact problem this whole fix exists to solve, just one layer up. Step 5 reads this manifest rather than guessing filenames. If the manifest is ever missing when Step 5 needs it (e.g. compaction wiped the conversation and this file was somehow never written), reconstruct it by globbing `{TEMP_DIR}/agent-output-pr-*-{RUN_ID}*.json` and, for each PR number, preferring a `-retry1` match over the base path if both exist — do not re-dispatch agents whose valid output is already sitting on disk. Delete the manifest in Step 8's cleanup along with everything else.
+**Maintain the PR → validated-output-path mapping as a file, not only in conversation** — write `{TEMP_DIR}/run-manifest-{RUN_ID}.json` (a flat `{"123": "/abs/path/to/agent-output-pr-123-<RUN_ID>.json", ...}`). Every time an agent's output validates successfully (including after a retry supersedes an original — see "Handling agent failures" below), update it by **reading the current contents of the file, merging in the one new entry, and writing the whole object back** — never write a fresh object from memory of what you think it already contains; that silently drops every PR recorded in a turn you no longer have in context. The manifest, like the per-PR output files it points at, must survive context compaction — a mapping that exists only in conversation state reintroduces the exact problem this whole fix exists to solve, just one layer up. Step 5 reads this manifest rather than guessing filenames. If the manifest is ever missing when Step 5 needs it (e.g. compaction wiped the conversation and this file was somehow never written), first recover `RUN_ID` itself from `$TEMP_DIR/current-run-id` (do not recompute it — see above), then reconstruct the manifest by globbing `{TEMP_DIR}/agent-output-pr-*-{RUN_ID}*.json` and, for each PR number, preferring a `-retry1` match over the base path if both exist — do not re-dispatch agents whose valid output is already sitting on disk. Delete the manifest in Step 8's cleanup along with everything else.
 
 Spin up one Agent per PR using `subagent_type: general-purpose`. Name each agent after a unique American outlaw from the 1800s–1900s (e.g. Jesse James, Belle Starr, Black Bart, Dutch Schultz, Pretty Boy Floyd, Billy the Kid, Bonnie Parker). Names must be unique per session — do not reuse a name even if reviewing many PRs.
 
@@ -164,7 +173,7 @@ Each agent must return a JSON object with exactly these fields:
       "status": "accepted | unresolved | addressed_in_code",
       "original_severity": "BLOCKER | HIGH | MEDIUM | LOW | QUESTION",
       "file": "path/to/file.ts (optional — only if the concern was about a specific file)",
-      "line": 42,
+      "line": "42 (optional — fold into `summary` instead if omitted; Step 5's Prior Discussions table has no Line column, so this field is never rendered on its own)",
       "reasoning": "why this status was assigned — e.g. 'reviewer replied OK to defer' or 'no response from reviewer after author acknowledged'"
     }
   ],
@@ -195,11 +204,11 @@ Each agent writes its full structured JSON to `{TEMP_DIR}/agent-output-pr-{numbe
 - `prior_discussions` is an array and is present (per Step 3, an agent must populate this, even with zero entries — its absence is itself a review failure, not just a formatting one); every element has `author`, `summary`, `status` (one of `accepted`/`unresolved`/`addressed_in_code`), and `original_severity` (one of `BLOCKER`/`HIGH`/`MEDIUM`/`LOW`/`QUESTION`) — `status` and `original_severity` specifically gate the "absolute" verdict rule in Step 3, so a missing one would silently defeat it
 - no finding, and no `prior_discussions` entry, has `severity`/`original_severity` of `"IRRELEVANT"` — that value is human-only (see above); an agent assigning it is invalid output, not a suppression to honor silently
 
-**Detecting a hung original dispatch (parallel, background agents only):** record the wall-clock time at dispatch (`date +%s`). On any later turn where a given agent still hasn't reported completion, run `date +%s` again and compare; once the difference exceeds 600 seconds, treat it as hung and proceed to step 2 below. This clock-based check only applies to agents dispatched with `run_in_background: true` — it is meaningless for a stacked PR's sequential (foreground) original dispatch or for any retry (both always use `run_in_background: false`, item below): a foreground `Agent` call blocks the current turn until it returns, so there is no "later turn" on which to re-check the clock. For those, a failure to return is a harness-level condition outside this skill's control, not something this skill's clock check can detect — if a foreground call never returns, there is no later step to reach.
+**Detecting a hung original dispatch (parallel, background agents only):** record the wall-clock time at dispatch by appending a line to `$TEMP_DIR/dispatch-times-{RUN_ID}.txt` (`echo "{pr-number} $(date +%s)" >> ...`) rather than only noting it in conversation — the same compaction risk that motivated `current-run-id` applies here. On any later turn where a given agent still hasn't reported completion, run `date +%s` again and compare against that PR's recorded dispatch time; once the difference exceeds 600 seconds, treat it as hung and proceed to step 2 below. This clock-based check only applies to agents dispatched with `run_in_background: true` — it is meaningless for a stacked PR's sequential (foreground) original dispatch or for any retry (both always use `run_in_background: false`, item below): a foreground `Agent` call blocks the current turn until it returns, so there is no "later turn" on which to re-check the clock. For those, a failure to return is a harness-level condition outside this skill's control, not something this skill's clock check can detect — if a foreground call never returns, there is no later step to reach. Delete `dispatch-times-{RUN_ID}.txt` in Step 8's cleanup along with everything else.
 
 **On any validation failure** (missing file, empty/truncated content, parse failure, or a check above failing) — including on the hung-original determination above:
 
-1. **Check whether the automatic retry has already been spent for this PR.** If `{TEMP_DIR}/agent-output-pr-{number}-{RUN_ID}-retry1.json` already exists (or an agent is already dispatched to write it), the one automatic retry below has already happened — skip straight to step 3; do not dispatch a second automatic retry.
+1. **Check whether the automatic retry has already been spent for this PR.** If `{TEMP_DIR}/agent-output-pr-{number}-{RUN_ID}-retry1.json` already exists (or an agent is already dispatched to write it), the one automatic retry below has already happened — attempt salvage on that retry file (step 2 below) and, if that fails, go straight to step 4; do not dispatch a second automatic retry (do not re-enter step 3).
 2. **Attempt salvage first**, but only if a file exists to salvage — skip this step entirely for a missing/never-written file and go straight to the retry below. Strip a leading/trailing code fence (` ```json ` / ` ``` `) or extract the outermost balanced `{...}` substring from the file's contents, then re-validate against the checks above. If salvage succeeds, **overwrite the output file with the salvaged, valid JSON** before continuing — Step 5 reads the file, not whatever you fixed only in your own context, so a repair that isn't written back is invisible downstream. A stray fence around otherwise-valid JSON is the most likely deviation — don't burn a full re-review over a cosmetic wrapper.
 3. If salvage doesn't produce valid output (or wasn't applicable), retry that one agent — this is the one automatic retry step 1 checks for. Never fall back to reviewing the PR yourself — that isn't a substitute for the agent's structured process and defeats the point of fanning out. Retry with:
    - The same self-contained prompt as the original dispatch, **except item 7's output path is replaced** with the new path below (do not leave the original path in the prompt alongside the new one — the agent must be told exactly one place to write, never two); for stacked PRs, keep the same prior-layer diff file path from Step 2 item 3 and do not re-fetch it
@@ -320,7 +329,7 @@ Do not manufacture findings to look thorough. If the code is good, say so.
 
 Reuse the `$TEMP_DIR` already resolved and created in Step 2 — do not re-derive it here. (If this step is somehow entered without having run Step 2 in this session, resolve it now using the commands shown below, treating that as a recovery path rather than the normal one.)
 
-Before doing anything else in this step, read `{TEMP_DIR}/run-manifest-{RUN_ID}.json` (written and maintained during Step 2) and confirm it has one entry for every PR under review — read each PR's JSON from the path recorded there, not from a filename guessed here (a retried PR's validated file lives at a `-retry1` path, not the original). If the manifest is missing, reconstruct it per Step 2's recovery instruction rather than drafting from memory of a conversation result. If any PR still has no entry after that, stop and resolve it in Step 2 first.
+Before doing anything else in this step: if `RUN_ID` isn't already in hand, read it from `$TEMP_DIR/current-run-id` — do not recompute it (see Step 2). Then read `{TEMP_DIR}/run-manifest-{RUN_ID}.json` (written and maintained during Step 2) and confirm it has one entry for every PR under review — read each PR's JSON from the path recorded there, not from a filename guessed here (a retried PR's validated file lives at a `-retry1` path, not the original). If the manifest is missing, reconstruct it per Step 2's recovery instruction rather than drafting from memory of a conversation result. If any PR still has no entry after that, stop and resolve it in Step 2 first.
 
 Before posting anything to GitHub, write a draft markdown file and present it to the user for review and editing.
 
@@ -355,7 +364,7 @@ File format:
 
 ## {owner}/{repo}#{number} — {title}
 
-**Author:** {login} | **CI:** passing / failing / pending
+**Author:** {login} | **CI:** passing / failing / pending{, introduced by this PR: yes/no — only append this clause when CI is failing}
 
 **Review Event:** `APPROVE` / `REQUEST_CHANGES` / `COMMENT` ← _edit this to control the formal GitHub review event submitted for this PR_
 
@@ -420,15 +429,17 @@ After human approval, re-read the draft file. For each PR:
 
 1. **Parse the `Review Event` field** from the draft file header. Valid values: `APPROVE`, `REQUEST_CHANGES`, `COMMENT`. The human may have changed this from the agent's original recommendation — **always use the value in the file, not the agent's original verdict.**
 
-2. **Collect IRRELEVANT findings before posting.** Scan the draft file for any inline comment rows whose severity is `IRRELEVANT`. For each one:
+2. **Collect IRRELEVANT findings before posting.** Scan the draft file for any row — in the Inline Comments table, the Body Comments table, or the Prior Discussions table — whose severity (or `Orig. Severity` for Prior Discussions) is `IRRELEVANT`. For each one:
    - Skip it — do not post it to GitHub.
-   - Append a record to `.review-suppressed.md` (create if absent) in this format:
+   - Append a record to `.review-suppressed.md` (create if absent) in this format, using `-` for `{line}` when the row is from the Body Comments or Prior Discussions table (neither carries a line number):
      ```
      {owner}/{repo}#{pr} | {file}:{line} | {comment summary} | suppressed {YYYY-MM-DD}
      ```
    This file is the persistence layer — future passes read it in Step 2 to avoid re-raising the same findings.
 
-3. **Pre-validate line numbers before posting.** For each PR that has inline comments, fetch its diff and build the valid RIGHT-side line set. Apply the algorithm from the Output Contract's "How to verify a line is in the diff" section. The pseudocode below illustrates the logic — apply it when constructing the API payload, not as runnable code:
+3. **Assemble the review body from the Body Comments table.** Every row in Step 5's "Body Comments" subsection (findings the agent deliberately left without a `line` because it couldn't confirm one against the diff) must end up in the posted review body — never dropped. Start building a `### Additional Comments` section from these rows now, as bullets in the form `- **{file}:{line}** — {comment body}`; item 4 below adds more bullets to this same section for any inline comment that fails line validation, and the merged result is used when posting in items 5–6.
+
+4. **Pre-validate line numbers before posting.** For each PR that has inline comments, fetch its diff and build the valid RIGHT-side line set. Apply the algorithm from the Output Contract's "How to verify a line is in the diff" section. The pseudocode below illustrates the logic — apply it when constructing the API payload, not as runnable code:
 
    ```python
    # PSEUDOCODE — apply this logic mentally when building the payload
@@ -454,18 +465,18 @@ After human approval, re-read the draft file. For each PR:
 
    For each proposed inline comment, check if `(path, line)` is in the valid set:
    - **In the set** → include as an inline comment.
-   - **Not in the set** → demote to the review body. Append a `### Comments that could not be posted inline` section (create it if it doesn't exist) and add a bullet:
+   - **Not in the set** → demote to the review body. Add it to the same `### Additional Comments` section started in item 3, as a bullet:
      ```
      - **{file}:{line}** — {comment body}
      ```
-   This eliminates 422 rejections entirely — no silent losses.
+   This eliminates 422 rejections entirely — no silent losses, and folds in with the Body Comments rows from item 3 so both land in one place.
 
-4. **Post inline comments with the review event** using `gh api`. Use `side: "RIGHT"` for all inline comments. Only post comments for lines confirmed in step 3. Use the content from the approved draft file — not the raw agent output. Skip any finding marked `IRRELEVANT`.
+5. **Post inline comments with the review event** using `gh api`. Use `side: "RIGHT"` for all inline comments. Only post comments for lines confirmed in step 4. Use the content from the approved draft file — not the raw agent output. Skip any finding marked `IRRELEVANT`. Set `body` to the `### Additional Comments` section assembled in items 3–4 (empty string if it has no bullets).
 
 ```
 gh api repos/{owner}/{repo}/pulls/{number}/reviews \
   --method POST \
-  --field body="" \
+  --field body="{assembled ### Additional Comments section, or empty string}" \
   --field event="{REVIEW_EVENT}" \
   --field "comments[][path]=path/to/file.ts" \
   --field "comments[][line]=42" \
@@ -475,12 +486,12 @@ gh api repos/{owner}/{repo}/pulls/{number}/reviews \
 
 Where `{REVIEW_EVENT}` is the value read from the draft file's `Review Event` field for that PR (`APPROVE`, `REQUEST_CHANGES`, or `COMMENT`).
 
-5. **If a PR has no inline comments** (or all were demoted to body text) and the review event is `APPROVE` or `REQUEST_CHANGES`, submit the review without comments:
+6. **If a PR has no inline comments** (all findings had a confirmed line, and there's nothing in `### Additional Comments`) and the review event is `APPROVE` or `REQUEST_CHANGES`, submit the review without inline comments, but still include the assembled body if it's non-empty:
 
 ```
 gh api repos/{owner}/{repo}/pulls/{number}/reviews \
   --method POST \
-  --field body="Reviewed by {your identity}" \
+  --field body="Reviewed by {your identity}{, plus the assembled ### Additional Comments section if non-empty}" \
   --field event="{REVIEW_EVENT}"
 ```
 
@@ -507,5 +518,5 @@ After posting all reviews:
 - If multiple PRs were reviewed, call out any cross-PR integration concerns surfaced.
 - If CI failures were introduced by any PR, name the PR and suggest `/resolve-ci-failures`.
 - If any PRs have BLOCKERs or HIGHs, list the top concerns briefly.
-- **Clean up this run's agent output files:** delete every `agent-output-pr-*-{RUN_ID}*.json` (the `*` after `{RUN_ID}` is required — it is what matches `-retry1`, `-retry2`, etc.), `run-manifest-{RUN_ID}.json`, and `diff-pr-*-{RUN_ID}.txt` from `$TEMP_DIR` — this `RUN_ID` namespacing (Step 2) means it's always safe to delete everything matching this run's ID without touching another run's files. This is the one point every run passes through on the happy path. If the run is instead abandoned partway through (e.g. the user chose to stop after a repeated agent failure), run the same cleanup for this `RUN_ID` before ending the session's work on this review.
+- **Clean up this run's agent output files:** delete every `agent-output-pr-*-{RUN_ID}*.json` (the `*` after `{RUN_ID}` is required — it is what matches `-retry1`, `-retry2`, etc.), `run-manifest-{RUN_ID}.json`, `dispatch-times-{RUN_ID}.txt`, `diff-pr-*-{RUN_ID}.txt`, and finally `current-run-id` from `$TEMP_DIR` — this `RUN_ID` namespacing (Step 2) means it's always safe to delete everything matching this run's ID without touching another run's files. This is the one point every run passes through on the happy path. If the run is instead abandoned partway through (e.g. the user chose to stop after a repeated agent failure), run the same cleanup for this `RUN_ID` before ending the session's work on this review.
 - This skill covers one review pass. Re-invoke after the author pushes new commits.
