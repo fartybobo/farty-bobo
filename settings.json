@@ -47,6 +47,7 @@
     ],
     "defaultMode": "auto"
   },
+  "model": "sonnet",
   "hooks": {
     "PostToolUse": [
       {
@@ -94,7 +95,8 @@
     "frontend-design@claude-plugins-official": true,
     "slack@claude-plugins-official": true,
     "farty-bobo@farty-bobo": false,
-    "modularity@vladikk-modularity": true
+    "modularity@vladikk-modularity": true,
+    "vercel@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "hamelsmu-evals-skills": {
@@ -149,6 +151,5 @@
   "feedbackSurveyState": {
     "lastShownTime": 1754572875128
   },
-  "knownMarketplaces": [],
-  "model": "sonnet"
+  "knownMarketplaces": []
 }
